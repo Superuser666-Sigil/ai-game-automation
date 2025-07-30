@@ -30,7 +30,7 @@ COMMON_KEYS = [
 ]
 
 # === TRAINING PARAMETERS ===
-BATCH_SIZE = 32  # Increased from 16 to 32 to improve GPU utilization and training efficiency, at the cost of higher memory usage
+BATCH_SIZE = 32  # Optimized for GPU utilization and training efficiency, with higher memory usage as a trade-off
 EPOCHS = 50
 LEARNING_RATE = 1e-4  # Reduced from 5e-4 for better convergence and stability
 WEIGHT_DECAY = 1e-5
