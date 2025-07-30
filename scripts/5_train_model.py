@@ -12,10 +12,10 @@ import matplotlib.pyplot as plt
 # === CONFIG ===
 DATA_DIRS = ["data_human"]
 IMG_WIDTH, IMG_HEIGHT = 960, 540
-BATCH_SIZE = 8  # Increased for better training
+BATCH_SIZE = 2  # Reduced for DirectML GPU memory constraints
 EPOCHS = 50  # More epochs for better learning
 MODEL_SAVE_PATH = "model_improved.pt"
-SEQUENCE_LENGTH = 5
+SEQUENCE_LENGTH = 3  # Reduced sequence length for memory efficiency
 LEARNING_RATE = 5e-4  # Lower learning rate for stability
 
 COMMON_KEYS = [
@@ -100,13 +100,16 @@ class ImprovedBehaviorCloningCNNRNN(nn.Module):
         
         print(f"CNN output size: {cnn_output_size}")
         
-        # LSTM with better initialization
-        self.lstm = nn.LSTM(
-            input_size=cnn_output_size, 
-            hidden_size=256,  # Reduced for stability
-            num_layers=2, 
-            batch_first=True,
-            dropout=0.1  # Reduced dropout
+        # DirectML-compatible temporal processing (replaces LSTM)
+        # Simple but effective temporal layers
+        self.temporal_layers = nn.Sequential(
+            nn.Linear(cnn_output_size, 512),
+            nn.ReLU(),
+            nn.Dropout(0.1),
+            nn.Linear(512, 256),
+            nn.ReLU(),
+            nn.Dropout(0.1),
+            nn.Linear(256, 256)  # Final temporal feature size
         )
         
         # Improved key head with better initialization
@@ -152,22 +155,26 @@ class ImprovedBehaviorCloningCNNRNN(nn.Module):
         
         # Process through CNN
         cnn_out = self.cnn(x.view(b * s, c, h, w))
-        lstm_in = cnn_out.view(b, s, -1)
+        temporal_in = cnn_out.view(b, s, -1)
         
-        # Process through LSTM
-        lstm_out, _ = self.lstm(lstm_in)
+        # Process through DirectML-compatible temporal layers
+        # Apply temporal processing to each frame independently
+        temporal_out = self.temporal_layers(temporal_in.view(b * s, -1))
+        temporal_out = temporal_out.view(b, s, -1)
         
-        # Apply heads to each timestep
-        lstm_flat = lstm_out.reshape(b * s, -1)
+        # Simple temporal aggregation - use the last frame's features
+        # (Alternative to LSTM's hidden state)
+        final_features = temporal_out[:, -1, :]  # Take last timestep
         
-        key_out = self.key_head(lstm_flat)
-        mouse_pos_out = self.mouse_pos_head(lstm_flat)
-        mouse_click_out = self.mouse_click_head(lstm_flat)
+        # Apply heads to final features
+        key_out = self.key_head(final_features)
+        mouse_pos_out = self.mouse_pos_head(final_features)
+        mouse_click_out = self.mouse_click_head(final_features)
         
-        # Combine outputs
+        # Combine outputs and expand back to sequence dimension for compatibility
         combined = torch.cat([key_out, mouse_pos_out, mouse_click_out], dim=1)
         
-        return combined.view(b, s, -1)
+        return combined.unsqueeze(1).expand(b, s, -1)
 
 def calculate_balanced_weights(actions, num_keys):
     """Calculate balanced weights that don't over-penalize key presses"""
@@ -188,9 +195,9 @@ def calculate_balanced_weights(actions, num_keys):
 def improved_loss(outputs, targets, num_keys, device, key_weights):
     b, s, _ = outputs.shape
     
-    # Reshape to treat sequence as batch
-    outputs = outputs.view(b * s, -1)
-    targets = targets.view(b * s, -1)
+    # Reshape to treat sequence as batch (use reshape for non-contiguous tensors)
+    outputs = outputs.reshape(b * s, -1)
+    targets = targets.reshape(b * s, -1)
     
     # Split outputs and targets
     key_outputs = outputs[:, :num_keys]
@@ -213,26 +220,31 @@ def improved_loss(outputs, targets, num_keys, device, key_weights):
                                        (1 - key_targets) * torch.log(1 - key_outputs + 1e-7))
     key_loss = (key_loss * key_weights_expanded).mean()
     
-    # MSE for mouse position
-    pos_loss = nn.functional.mse_loss(mouse_pos_outputs, mouse_pos_targets)
+    # MSE for mouse position (DirectML compatible)
+    diff = mouse_pos_outputs - mouse_pos_targets
+    pos_loss = torch.mean(diff * diff)
     
     # L1 regularization for mouse movement smoothness
     # Penalize large differences between consecutive mouse predictions
     mouse_smoothness_loss = 0.0
     if s > 1:  # Only if we have sequences
         # Reshape back to sequence format for temporal analysis
-        mouse_seq_outputs = mouse_pos_outputs.view(b, s, 2)
-        mouse_seq_targets = mouse_pos_targets.view(b, s, 2)
+        mouse_seq_outputs = mouse_pos_outputs.reshape(b, s, 2)
+        mouse_seq_targets = mouse_pos_targets.reshape(b, s, 2)
         
         # Calculate L1 loss on consecutive frame differences
         mouse_diff_pred = torch.abs(mouse_seq_outputs[:, 1:] - mouse_seq_outputs[:, :-1])
         mouse_diff_target = torch.abs(mouse_seq_targets[:, 1:] - mouse_seq_targets[:, :-1])
         
-        # Encourage predicted movement to match target movement patterns
-        mouse_smoothness_loss = nn.functional.l1_loss(mouse_diff_pred, mouse_diff_target)
+        # Encourage predicted movement to match target movement patterns (DirectML compatible)
+        mouse_smoothness_loss = torch.mean(torch.abs(mouse_diff_pred - mouse_diff_target))
     
-    # BCE for mouse clicks
-    click_loss = nn.functional.binary_cross_entropy(mouse_click_outputs, mouse_click_targets)
+    # BCE for mouse clicks (DirectML compatible)
+    # Custom BCE: -(target * log(input) + (1 - target) * log(1 - input))
+    eps = 1e-7
+    mouse_click_outputs_clamped = torch.clamp(mouse_click_outputs, eps, 1 - eps)
+    click_loss = -torch.mean(mouse_click_targets * torch.log(mouse_click_outputs_clamped) + 
+                            (1 - mouse_click_targets) * torch.log(1 - mouse_click_outputs_clamped))
     
     # Balanced loss weights (added small weight for smoothness)
     total_loss = key_loss * 2.0 + pos_loss * 1.0 + click_loss * 1.5 + mouse_smoothness_loss * 0.1
@@ -282,11 +294,45 @@ def train():
     optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=1e-5)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5)
     
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # Smart device selection: DirectML -> ROCm/CUDA -> CPU
+    device = None
+    device_name = "Unknown"
+    
+    # Try DirectML first (best for AMD GPUs on Windows)
+    try:
+        import torch_directml
+        device = torch_directml.device()
+        device_name = "DirectML (AMD GPU acceleration)"
+        print("🚀 Using DirectML for GPU acceleration!")
+    except ImportError:
+        pass
+    
+    # Fallback to ROCm/CUDA
+    if device is None:
+        if torch.cuda.is_available():
+            device = torch.device("cuda")
+            device_name = f"CUDA (GPU: {torch.cuda.get_device_name()})"
+            print("⚡ Using CUDA for GPU acceleration!")
+        else:
+            # Check for ROCm (AMD's CUDA alternative)
+            try:
+                if hasattr(torch.version, 'hip') and torch.version.hip is not None:
+                    device = torch.device("cuda")  # ROCm uses cuda device interface
+                    device_name = "ROCm (AMD GPU acceleration)"
+                    print("🔥 Using ROCm for AMD GPU acceleration!")
+            except:
+                pass
+    
+    # Final fallback to CPU
+    if device is None:
+        device = torch.device("cpu")
+        device_name = "CPU (no GPU acceleration)"
+        print("💻 Using CPU (consider installing DirectML for GPU acceleration)")
+    
     model.to(device)
     key_weights = key_weights.to(device)
     
-    print(f"Training on {device} for {EPOCHS} epochs...")
+    print(f"Training on {device_name} for {EPOCHS} epochs...")
     print(f"Dataset size: {len(combined_dataset)} sequences")
     
     # Training loop with detailed logging

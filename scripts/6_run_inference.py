@@ -113,7 +113,46 @@ output_dim = len(COMMON_KEYS) + 4
 model = ImprovedBehaviorCloningCNNRNN(output_dim)
 
 try:
-    model.load_state_dict(torch.load(MODEL_PATH, map_location="cpu"))
+    # Smart device selection: DirectML -> ROCm/CUDA -> CPU
+device = None
+device_name = "Unknown"
+
+# Try DirectML first (best for AMD GPUs on Windows)
+try:
+    import torch_directml
+    device = torch_directml.device()
+    device_name = "DirectML (AMD GPU acceleration)"
+    print("🚀 Using DirectML for inference acceleration!")
+except ImportError:
+    pass
+
+# Fallback to ROCm/CUDA
+if device is None:
+    if torch.cuda.is_available():
+        device = torch.device("cuda")
+        device_name = f"CUDA (GPU: {torch.cuda.get_device_name()})"
+        print("⚡ Using CUDA for inference acceleration!")
+    else:
+        # Check for ROCm (AMD's CUDA alternative)
+        try:
+            if hasattr(torch.version, 'hip') and torch.version.hip is not None:
+                device = torch.device("cuda")  # ROCm uses cuda device interface
+                device_name = "ROCm (AMD GPU acceleration)"
+                print("🔥 Using ROCm for inference acceleration!")
+        except:
+            pass
+
+# Final fallback to CPU
+if device is None:
+    device = torch.device("cpu")
+    device_name = "CPU (no GPU acceleration)"
+    print("💻 Using CPU for inference (consider installing DirectML for GPU acceleration)")
+
+print(f"Loading model on {device_name}...")
+
+# Load model with proper device mapping
+model.load_state_dict(torch.load(MODEL_PATH, map_location=device))
+model.to(device)
     print("✅ Improved model loaded successfully")
 except Exception as e:
     print(f"❌ Error loading model: {e}")
@@ -300,8 +339,8 @@ try:
             frame = capture_and_process_frame()
             frame_sequence.append(frame)
             
-            # Prepare input tensor
-            input_tensor = torch.stack(list(frame_sequence)).unsqueeze(0)
+            # Prepare input tensor and move to device
+            input_tensor = torch.stack(list(frame_sequence)).unsqueeze(0).to(device)
             
             # Run inference
             with torch.no_grad():

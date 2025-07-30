@@ -15,15 +15,29 @@ def check_data_exists():
     """Check if training data exists and analyze basic properties."""
     print("🔍 Checking Training Data...")
     
-    if not os.path.exists("actions.npy"):
+    # Check both current directory and data_human directory
+    data_paths = [
+        ("actions.npy", "frames"),  # Current directory
+        ("data_human/actions.npy", "data_human/frames")  # data_human directory
+    ]
+    
+    actions_path = None
+    frames_dir = None
+    
+    for actions_file, frames_folder in data_paths:
+        if os.path.exists(actions_file) and os.path.exists(frames_folder):
+            actions_path = actions_file
+            frames_dir = frames_folder
+            break
+    
+    if not actions_path:
         print("❌ No training data found!")
         print("   Please run 3_record_data.py first to record gameplay data.")
         return None
     
     # Load and analyze data
     try:
-        actions = np.load("actions.npy")
-        frames_dir = "frames"
+        actions = np.load(actions_path)
         frame_count = len([f for f in os.listdir(frames_dir) if f.endswith('.jpg')]) if os.path.exists(frames_dir) else 0
         
         data_info = {
@@ -48,8 +62,24 @@ def analyze_data_complexity():
     """Analyze the complexity of the training data to recommend model size."""
     print("\n📊 Analyzing Data Complexity...")
     
+    # Find the data path (same logic as check_data_exists)
+    data_paths = [
+        "actions.npy",  # Current directory
+        "data_human/actions.npy"  # data_human directory
+    ]
+    
+    actions_path = None
+    for path in data_paths:
+        if os.path.exists(path):
+            actions_path = path
+            break
+    
+    if not actions_path:
+        print("❌ No actions.npy found for analysis")
+        return None
+    
     try:
-        actions = np.load("actions.npy")
+        actions = np.load(actions_path)
         
         # Common keys analysis
         COMMON_KEYS_COUNT = 62
