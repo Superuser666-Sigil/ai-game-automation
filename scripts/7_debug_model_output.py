@@ -1,4 +1,6 @@
 # 7_debug_model_output.py - Model Output Analysis
+import os
+import sys
 import torch
 import torch.nn as nn
 import numpy as np
@@ -8,21 +10,14 @@ import time
 from collections import deque
 from torchvision import transforms
 
-# === CONFIG ===
+# Import shared configuration
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from config import *
+
+# === SCREEN CONFIG ===
 with mss.mss() as sct: 
     monitor = sct.monitors[1]
 SCREEN_WIDTH, SCREEN_HEIGHT = monitor["width"], monitor["height"]
-MODEL_PATH = "model_rnn.pt"
-IMG_WIDTH, IMG_HEIGHT = 960, 540
-SEQUENCE_LENGTH = 5
-
-COMMON_KEYS = [
-    'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p',
-    'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', '1', '2', '3', '4', '5', '6',
-    '7', '8', '9', '0', 'space', 'shift', 'ctrl', 'alt', 'tab', 'enter', 'backspace',
-    'up', 'down', 'left', 'right', 'f1', 'f3', 'f4', 'f5', 'f6', 'f7', 'f8', 'f9',
-    'f10', 'f11', 'f12', '-', '=', '[', ']', '\\', ';', '\'', ',', '.', '/'
-]
 
 class BehaviorCloningCNNRNN(nn.Module):
     def __init__(self, output_dim):
