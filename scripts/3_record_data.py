@@ -72,7 +72,7 @@ def capture_frame():
         monitor = sct.monitors[1]
         img = np.array(sct.grab(monitor))
         img = cv2.cvtColor(img, cv2.COLOR_BGRA2RGB)
-        img = cv2.resize(img, (960, 540))
+        img = cv2.resize(img, (IMG_WIDTH, IMG_HEIGHT))
         return img
 
 def get_current_action():
@@ -125,8 +125,8 @@ if __name__ == "__main__":
         
         if actions:
             actions_array = np.array(actions, dtype=np.float32)
-            np.save(os.path.join(SAVE_DIR, "actions.npy"), actions_array)
-            print(f"✅ Saved {len(actions)} actions and frames to {SAVE_DIR}.")
+            np.save(ACTIONS_FILE, actions_array)
+            print(f"✅ Saved {len(actions)} actions and frames to {DATA_DIR}.")
             
             # Print statistics for debugging
             key_actions = actions_array[:, :len(COMMON_KEYS)]

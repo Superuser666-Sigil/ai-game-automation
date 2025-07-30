@@ -8,7 +8,10 @@ ACTIONS_FILE = os.path.join(DATA_DIR, "actions.npy")
 MODEL_PATH = "model_improved.pt"
 
 # === IMAGE & SEQUENCE SETTINGS ===
+# Recording/Inference dimensions (full resolution for accuracy)
 IMG_WIDTH, IMG_HEIGHT = 960, 540
+# Training dimensions (resized for efficiency and memory)
+TRAIN_IMG_WIDTH, TRAIN_IMG_HEIGHT = 224, 224
 SEQUENCE_LENGTH = 5
 
 # === RECORDING & INFERENCE ===
@@ -27,9 +30,9 @@ COMMON_KEYS = [
 ]
 
 # === TRAINING PARAMETERS ===
-BATCH_SIZE = 32  # Increased for better GPU utilization
+BATCH_SIZE = 32  # Increased from 16 to 32 for better GPU utilization by improving memory usage and parallelism
 EPOCHS = 50
-LEARNING_RATE = 1e-4  # Optimized for better convergence
+LEARNING_RATE = 1e-4  # Reduced from 5e-4 for better convergence and stability
 WEIGHT_DECAY = 1e-5
 SCHEDULER_FACTOR = 0.7
 SCHEDULER_PATIENCE = 10
@@ -58,3 +61,34 @@ TEMPORAL_HIDDEN_SIZE = 256
 KEY_HEAD_SIZE = 128
 MOUSE_POS_HEAD_SIZE = 64
 MOUSE_CLICK_HEAD_SIZE = 32
+
+def validate_config():
+    """Validate configuration consistency and provide warnings"""
+    warnings = []
+    
+    # Check image dimension consistency
+    if IMG_WIDTH != 960 or IMG_HEIGHT != 540:
+        warnings.append(f"Recording dimensions ({IMG_WIDTH}x{IMG_HEIGHT}) differ from standard (960x540)")
+    
+    if TRAIN_IMG_WIDTH != 224 or TRAIN_IMG_HEIGHT != 224:
+        warnings.append(f"Training dimensions ({TRAIN_IMG_WIDTH}x{TRAIN_IMG_HEIGHT}) differ from standard (224x224)")
+    
+    # Check learning rate
+    if LEARNING_RATE > 1e-3:
+        warnings.append(f"Learning rate {LEARNING_RATE} may be too high for stable training")
+    
+    # Check batch size
+    if BATCH_SIZE > 64:
+        warnings.append(f"Batch size {BATCH_SIZE} may cause memory issues on some GPUs")
+    
+    # Check key list
+    if len(COMMON_KEYS) < 10:
+        warnings.append(f"Only {len(COMMON_KEYS)} keys configured - consider adding more for better gameplay coverage")
+    
+    if warnings:
+        print("⚠️  Configuration warnings:")
+        for warning in warnings:
+            print(f"   - {warning}")
+        print()
+    
+    return len(warnings) == 0

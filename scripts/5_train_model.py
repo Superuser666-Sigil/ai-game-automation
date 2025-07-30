@@ -14,9 +14,12 @@ import matplotlib.pyplot as plt
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import *
 
-# Override image dimensions for training (resize for efficiency)
-IMG_HEIGHT = 224
-IMG_WIDTH = 224
+# Validate configuration consistency
+validate_config()
+
+# Use training-specific dimensions from config
+IMG_HEIGHT = TRAIN_IMG_HEIGHT
+IMG_WIDTH = TRAIN_IMG_WIDTH
 SEQUENCE_LENGTH = 3  # Reduced sequence length for memory efficiency
 
 class WoWSequenceDataset(Dataset):
@@ -293,18 +296,18 @@ def train():
     all_datasets = []
     all_actions = []
     
-    for data_dir in DATA_DIRS:
-        frame_dir = os.path.join(data_dir, "frames")
-        actions_file = os.path.join(data_dir, "actions.npy")
+    # Use centralized config paths
+    frame_dir = FRAME_DIR
+    actions_file = ACTIONS_FILE
         
         if os.path.exists(actions_file) and os.path.exists(frame_dir):
-            print(f"Loading dataset from: {data_dir}")
+            print(f"Loading dataset from: {DATA_DIR}")
             dataset = WoWSequenceDataset(frame_dir, actions_file, SEQUENCE_LENGTH, transform)
             if len(dataset) > 0:
                 all_datasets.append(dataset)
                 all_actions.append(dataset.actions)
         else:
-            print(f"Warning: Directory {data_dir} not found or missing files.")
+            print(f"Warning: Dataset not found at {DATA_DIR}")
     
     if not all_datasets:
         print("No valid datasets found!")
