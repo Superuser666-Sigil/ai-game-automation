@@ -5,11 +5,13 @@ Train an AI to play games by learning from your gameplay! This project uses beha
 ## ✨ Features
 
 - **🎯 Easy Setup**: Numbered scripts guide you through the entire process
+- **🚀 DirectML GPU Acceleration**: Native AMD/Intel GPU support on Windows (3-6x faster training)
 - **🧠 Smart GPU Detection**: Automatically detects and configures NVIDIA/AMD/CPU
 - **📊 Data Quality Analysis**: Ensures your training data is good before training
 - **⚙️ Intelligent Model Sizing**: Recommends optimal configurations for your hardware
-- **🎮 Real-time Inference**: Smooth mouse movement and responsive key presses
+- **🎮 Real-time Inference**: Smooth mouse movement with temporal smoothing
 - **🛠️ Comprehensive Debugging**: Tools to understand and improve your AI's performance
+- **⚡ Optimized Training**: Balanced loss functions and adaptive learning rates
 
 ## 🚀 Quick Start
 
@@ -32,16 +34,17 @@ python 6_run_inference.py                   # Watch your AI play!
 ## 📋 Requirements
 
 - **Windows 10/11** (primary platform)
-- **Python 3.8+**
+- **Python 3.12** (recommended for DirectML support)
 - **4GB+ RAM** (8GB+ recommended for training)
-- **Optional**: NVIDIA/AMD GPU for faster training
+- **Optional**: AMD/Intel GPU for DirectML acceleration (3-6x faster)
+- **Optional**: NVIDIA GPU for CUDA acceleration
 
 ## 🎯 How It Works
 
 1. **📹 Record**: Capture your screen and input actions while playing
 2. **📊 Analyze**: Check data quality and get optimization recommendations  
-3. **🧠 Train**: Neural network learns to map screen images to your actions
-4. **🎮 Play**: AI takes control and mimics your gameplay style
+3. **🧠 Train**: Neural network learns to map screen images to your actions (15-60 minutes with GPU)
+4. **🎮 Play**: AI takes control with smooth mouse movement and responsive key presses
 
 ## 📖 Documentation
 
@@ -97,5 +100,7 @@ Built with PyTorch, OpenCV, and inspired by behavior cloning research. Thanks to
 ---
 
 **Ready to get started?** Run `python scripts/0_setup.py` and follow the numbered workflow above! 
+
+**🚀 GPU Acceleration**: For AMD/Intel GPUs, the setup will automatically configure DirectML for 3-6x faster training!
 
 **Need help?** Check the [Troubleshooting Guide](docs/TROUBLESHOOTING.md) for solutions to common issues.

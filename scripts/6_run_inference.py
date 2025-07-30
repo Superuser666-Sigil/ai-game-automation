@@ -47,7 +47,7 @@ class ImprovedBehaviorCloningCNNRNN(nn.Module):
     def __init__(self, output_dim):
         super().__init__()
         
-        # Match improved training architecture exactly
+        # Match improved training architecture exactly (DirectML compatible)
         self.cnn = nn.Sequential(
             nn.Conv2d(3, 32, 5, stride=2, padding=2), nn.BatchNorm2d(32), nn.ReLU(),
             nn.Conv2d(32, 64, 3, stride=2, padding=1), nn.BatchNorm2d(64), nn.ReLU(),
@@ -60,12 +60,11 @@ class ImprovedBehaviorCloningCNNRNN(nn.Module):
             dummy_input = torch.zeros(1, 3, IMG_HEIGHT, IMG_WIDTH)
             cnn_output_size = self.cnn(dummy_input).shape[1]
         
-        self.lstm = nn.LSTM(
-            input_size=cnn_output_size, 
-            hidden_size=256,
-            num_layers=2, 
-            batch_first=True,
-            dropout=0.1
+        # DirectML-compatible temporal layers (replaces LSTM)
+        self.temporal_layers = nn.Sequential(
+            nn.Linear(cnn_output_size, 512), nn.ReLU(), nn.Dropout(0.1),
+            nn.Linear(512, 256), nn.ReLU(), nn.Dropout(0.1),
+            nn.Linear(256, 256)
         )
         
         # Separate heads for different outputs
@@ -94,26 +93,71 @@ class ImprovedBehaviorCloningCNNRNN(nn.Module):
     def forward(self, x):
         b, s, c, h, w = x.shape
         
+        # Process through CNN
         cnn_out = self.cnn(x.view(b * s, c, h, w))
-        lstm_in = cnn_out.view(b, s, -1)
-        lstm_out, _ = self.lstm(lstm_in)
         
-        lstm_flat = lstm_out.reshape(b * s, -1)
+        # Process through temporal layers (DirectML compatible)
+        temporal_in = cnn_out.view(b, s, -1)
+        temporal_out = self.temporal_layers(temporal_in.view(b * s, -1))
+        temporal_out = temporal_out.view(b, s, -1)
         
-        key_out = self.key_head(lstm_flat)
-        mouse_pos_out = self.mouse_pos_head(lstm_flat)
-        mouse_click_out = self.mouse_click_head(lstm_flat)
+        # Take last timestep for prediction
+        final_features = temporal_out[:, -1, :]
         
+        # Generate outputs
+        key_out = self.key_head(final_features)
+        mouse_pos_out = self.mouse_pos_head(final_features)
+        mouse_click_out = self.mouse_click_head(final_features)
+        
+        # Combine and expand to sequence length
         combined = torch.cat([key_out, mouse_pos_out, mouse_click_out], dim=1)
-        
-        return combined.view(b, s, -1)
+        return combined.unsqueeze(1).expand(b, s, -1)
 
 # === Load Model and Controllers ===
 output_dim = len(COMMON_KEYS) + 4
 model = ImprovedBehaviorCloningCNNRNN(output_dim)
 
 try:
-    model.load_state_dict(torch.load(MODEL_PATH, map_location="cpu"))
+    # Smart device selection: DirectML -> ROCm/CUDA -> CPU
+    device = None
+    device_name = "Unknown"
+
+    # Try DirectML first (best for AMD GPUs on Windows)
+    try:
+        import torch_directml
+        device = torch_directml.device()
+        device_name = "DirectML (AMD GPU acceleration)"
+        print("🚀 Using DirectML for inference acceleration!")
+    except ImportError:
+        pass
+
+    # Fallback to ROCm/CUDA
+    if device is None:
+        if torch.cuda.is_available():
+            device = torch.device("cuda")
+            device_name = f"CUDA (GPU: {torch.cuda.get_device_name()})"
+            print("⚡ Using CUDA for inference acceleration!")
+        else:
+            # Check for ROCm (AMD's CUDA alternative)
+            try:
+                if hasattr(torch.version, 'hip') and torch.version.hip is not None:
+                    device = torch.device("cuda")  # ROCm uses cuda device interface
+                    device_name = "ROCm (AMD GPU acceleration)"
+                    print("🔥 Using ROCm for inference acceleration!")
+            except:
+                pass
+
+    # Final fallback to CPU
+    if device is None:
+        device = torch.device("cpu")
+        device_name = "CPU (no GPU acceleration)"
+        print("💻 Using CPU for inference (consider installing DirectML for GPU acceleration)")
+
+    print(f"Loading model on {device_name}...")
+
+    # Load model with proper device mapping
+    model.load_state_dict(torch.load(MODEL_PATH, map_location=device))
+    model.to(device)
     print("✅ Improved model loaded successfully")
 except Exception as e:
     print(f"❌ Error loading model: {e}")
@@ -300,8 +344,8 @@ try:
             frame = capture_and_process_frame()
             frame_sequence.append(frame)
             
-            # Prepare input tensor
-            input_tensor = torch.stack(list(frame_sequence)).unsqueeze(0)
+            # Prepare input tensor and move to device
+            input_tensor = torch.stack(list(frame_sequence)).unsqueeze(0).to(device)
             
             # Run inference
             with torch.no_grad():
