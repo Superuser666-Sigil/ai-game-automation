@@ -299,15 +299,15 @@ def train():
     # Use centralized config paths
     frame_dir = FRAME_DIR
     actions_file = ACTIONS_FILE
-        
-        if os.path.exists(actions_file) and os.path.exists(frame_dir):
-            print(f"Loading dataset from: {DATA_DIR}")
-            dataset = WoWSequenceDataset(frame_dir, actions_file, SEQUENCE_LENGTH, transform)
-            if len(dataset) > 0:
-                all_datasets.append(dataset)
-                all_actions.append(dataset.actions)
-        else:
-            print(f"Warning: Dataset not found at {DATA_DIR}")
+    
+    if os.path.exists(actions_file) and os.path.exists(frame_dir):
+        print(f"Loading dataset from: {DATA_DIR}")
+        dataset = WoWSequenceDataset(frame_dir, actions_file, SEQUENCE_LENGTH, transform)
+        if len(dataset) > 0:
+            all_datasets.append(dataset)
+            all_actions.append(dataset.actions)
+    else:
+        print(f"Warning: Dataset not found at {DATA_DIR}")
     
     if not all_datasets:
         print("No valid datasets found!")
