@@ -78,7 +78,8 @@ python scripts/1_check_dependencies.py
 
 # Install GPU version of PyTorch (follow the specific commands shown)
 # For NVIDIA: pip install torch --index-url https://download.pytorch.org/whl/cu121
-# For AMD: pip install torch --index-url https://download.pytorch.org/whl/rocm6.0
+# For AMD/Intel: pip install torch-directml (Windows DirectML acceleration)
+# For AMD Linux: pip install torch --index-url https://download.pytorch.org/whl/rocm6.0
 ```
 
 ### "CUDA out of memory"
@@ -99,6 +100,12 @@ python scripts/4_analyze_data_quality.py
 
 # If key press rate < 5%, record more active gameplay
 # If data looks good, try longer training (more epochs)
+
+# If loss is stagnating (not changing between epochs):
+# - Training parameters have been optimized for better convergence
+# - Learning rate reduced from 5e-4 to 1e-4
+# - Loss weights balanced for better learning
+# - Try recording more diverse gameplay data
 ```
 
 ## 🎯 AI Performance Issues
@@ -167,6 +174,28 @@ pip install torch torchvision --index-url https://download.pytorch.org/whl/rocm6
 # If still issues, use CPU version:
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
 ```
+
+### "DirectML installation issues" (AMD/Intel Windows users)
+**Problem**: torch-directml not installing or working
+**Solutions**:
+```bash
+# Ensure Python 3.12 (DirectML requirement)
+python --version  # Should show 3.12.x
+
+# Install DirectML in fresh virtual environment:
+python -m venv ai_directml_venv
+ai_directml_venv\Scripts\activate
+pip install torch-directml
+
+# If Python 3.13+, downgrade to 3.12 or use CPU version
+```
+
+### "High CPU usage with DirectML" (Normal behavior)
+**Problem**: Seeing 80% CPU usage during DirectML training
+**Solution**: This is **normal and expected**! DirectML uses both GPU and CPU:
+- 55-60% GPU usage = GPU acceleration working
+- 80% CPU usage = Full system utilization (good!)
+- This indicates optimal performance, not an issue
 
 ## 🔧 Game-Specific Issues
 
