@@ -1,0 +1,376 @@
+# 3_train_improved_model.py - FIXED VERSION
+import os
+import numpy as np
+import cv2
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.utils.data import Dataset, DataLoader, ConcatDataset
+from torchvision import transforms
+import matplotlib.pyplot as plt
+
+# === CONFIG ===
+DATA_DIRS = ["data_human"]
+IMG_WIDTH, IMG_HEIGHT = 960, 540
+BATCH_SIZE = 8  # Increased for better training
+EPOCHS = 50  # More epochs for better learning
+MODEL_SAVE_PATH = "model_improved.pt"
+SEQUENCE_LENGTH = 5
+LEARNING_RATE = 5e-4  # Lower learning rate for stability
+
+COMMON_KEYS = [
+    'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p',
+    'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', '1', '2', '3', '4', '5', '6',
+    '7', '8', '9', '0', 'space', 'shift', 'ctrl', 'alt', 'tab', 'enter', 'backspace',
+    'up', 'down', 'left', 'right', 'f1', 'f3', 'f4', 'f5', 'f6', 'f7', 'f8', 'f9',
+    'f10', 'f11', 'f12', '-', '=', '[', ']', '\\', ';', '\'', ',', '.', '/'
+]
+
+class WoWSequenceDataset(Dataset):
+    def __init__(self, frame_dir, actions_file, sequence_length, transform=None):
+        self.frame_paths = sorted([os.path.join(frame_dir, f) for f in os.listdir(frame_dir) if f.endswith(".jpg")])
+        self.actions = np.load(actions_file).astype(np.float32)
+        
+        # Ensure we have matching data
+        min_len = min(len(self.frame_paths), len(self.actions))
+        self.frame_paths = self.frame_paths[:min_len]
+        self.actions = self.actions[:min_len]
+        
+        self.transform = transform
+        self.sequence_length = sequence_length
+        
+        print(f"Dataset: {len(self.frame_paths)} frames, {len(self.actions)} actions")
+        
+        # Analyze the data
+        key_actions = self.actions[:, :len(COMMON_KEYS)]
+        key_totals = np.sum(key_actions, axis=0)
+        active_keys = [(COMMON_KEYS[i], int(total)) for i, total in enumerate(key_totals) if total > 0]
+        print(f"Active keys in data: {active_keys}")
+        
+        # Check for class imbalance
+        total_key_presses = np.sum(key_actions)
+        total_frames = len(self.actions)
+        print(f"Key press rate: {total_key_presses / (total_frames * len(COMMON_KEYS)):.4f}")
+        
+        if total_key_presses / (total_frames * len(COMMON_KEYS)) < 0.01:
+            print("⚠️  WARNING: Very low key press rate! This will cause training issues.")
+    
+    def __len__(self):
+        return max(0, len(self.frame_paths) - self.sequence_length + 1)
+    
+    def __getitem__(self, idx):
+        end_idx = idx + self.sequence_length
+        seq_frames = []
+        
+        for i in range(idx, end_idx):
+            try:
+                img = cv2.imread(self.frame_paths[i])
+                if img is None:
+                    raise ValueError(f"Could not load image: {self.frame_paths[i]}")
+                img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                if self.transform:
+                    img = self.transform(img)
+                seq_frames.append(img)
+            except Exception as e:
+                print(f"Error loading frame {i}: {e}")
+                black_frame = torch.zeros(3, IMG_HEIGHT, IMG_WIDTH)
+                seq_frames.append(black_frame)
+        
+        seq_actions = self.actions[idx:end_idx]
+        
+        return torch.stack(seq_frames), torch.tensor(seq_actions, dtype=torch.float32)
+
+class ImprovedBehaviorCloningCNNRNN(nn.Module):
+    def __init__(self, output_dim):
+        super().__init__()
+        
+        # Simplified CNN for better training
+        self.cnn = nn.Sequential(
+            nn.Conv2d(3, 32, 5, stride=2, padding=2), nn.BatchNorm2d(32), nn.ReLU(),
+            nn.Conv2d(32, 64, 3, stride=2, padding=1), nn.BatchNorm2d(64), nn.ReLU(),
+            nn.Conv2d(64, 128, 3, stride=2, padding=1), nn.BatchNorm2d(128), nn.ReLU(),
+            nn.AdaptiveAvgPool2d((6, 6)),
+            nn.Flatten()
+        )
+        
+        # Calculate CNN output size
+        with torch.no_grad():
+            dummy_input = torch.zeros(1, 3, IMG_HEIGHT, IMG_WIDTH)
+            cnn_output_size = self.cnn(dummy_input).shape[1]
+        
+        print(f"CNN output size: {cnn_output_size}")
+        
+        # LSTM with better initialization
+        self.lstm = nn.LSTM(
+            input_size=cnn_output_size, 
+            hidden_size=256,  # Reduced for stability
+            num_layers=2, 
+            batch_first=True,
+            dropout=0.1  # Reduced dropout
+        )
+        
+        # Improved key head with better initialization
+        self.key_head = nn.Sequential(
+            nn.Linear(256, 128),
+            nn.ReLU(),
+            nn.Dropout(0.2),
+            nn.Linear(128, len(COMMON_KEYS)),
+            nn.Sigmoid()
+        )
+        
+        self.mouse_pos_head = nn.Sequential(
+            nn.Linear(256, 64),
+            nn.ReLU(),
+            nn.Linear(64, 2),
+            nn.Sigmoid()
+        )
+        
+        self.mouse_click_head = nn.Sequential(
+            nn.Linear(256, 32),
+            nn.ReLU(),
+            nn.Linear(32, 2),
+            nn.Sigmoid()
+        )
+        
+        # Initialize weights for better training
+        self._init_weights()
+    
+    def _init_weights(self):
+        """Initialize weights to prevent vanishing gradients"""
+        for m in self.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.xavier_uniform_(m.weight)
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
+            elif isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
+    
+    def forward(self, x):
+        b, s, c, h, w = x.shape
+        
+        # Process through CNN
+        cnn_out = self.cnn(x.view(b * s, c, h, w))
+        lstm_in = cnn_out.view(b, s, -1)
+        
+        # Process through LSTM
+        lstm_out, _ = self.lstm(lstm_in)
+        
+        # Apply heads to each timestep
+        lstm_flat = lstm_out.reshape(b * s, -1)
+        
+        key_out = self.key_head(lstm_flat)
+        mouse_pos_out = self.mouse_pos_head(lstm_flat)
+        mouse_click_out = self.mouse_click_head(lstm_flat)
+        
+        # Combine outputs
+        combined = torch.cat([key_out, mouse_pos_out, mouse_click_out], dim=1)
+        
+        return combined.view(b, s, -1)
+
+def calculate_balanced_weights(actions, num_keys):
+    """Calculate balanced weights that don't over-penalize key presses"""
+    key_actions = actions[:, :num_keys]
+    pos_counts = np.sum(key_actions, axis=0)
+    neg_counts = len(actions) - pos_counts
+    
+    # Avoid division by zero and extreme weights
+    pos_counts = np.maximum(pos_counts, 1)
+    neg_counts = np.maximum(neg_counts, 1)
+    
+    # Use square root to reduce extreme weight differences
+    weights = np.sqrt(neg_counts / pos_counts)
+    weights = np.clip(weights, 1.0, 10.0)  # Much more reasonable limits
+    
+    return torch.tensor(weights, dtype=torch.float32)
+
+def improved_loss(outputs, targets, num_keys, device, key_weights):
+    b, s, _ = outputs.shape
+    
+    # Reshape to treat sequence as batch
+    outputs = outputs.view(b * s, -1)
+    targets = targets.view(b * s, -1)
+    
+    # Split outputs and targets
+    key_outputs = outputs[:, :num_keys]
+    key_targets = targets[:, :num_keys]
+    mouse_pos_outputs = outputs[:, num_keys:num_keys+2]
+    mouse_pos_targets = targets[:, num_keys:num_keys+2]
+    mouse_click_outputs = outputs[:, num_keys+2:]
+    mouse_click_targets = targets[:, num_keys+2:]
+    
+    # Focal loss for keys to handle class imbalance better
+    alpha = 0.25
+    gamma = 2.0
+    
+    key_weights_expanded = key_weights.unsqueeze(0).expand_as(key_targets)
+    
+    # Focal loss implementation
+    pt = key_targets * key_outputs + (1 - key_targets) * (1 - key_outputs)
+    focal_weight = (1 - pt) ** gamma
+    key_loss = -alpha * focal_weight * (key_targets * torch.log(key_outputs + 1e-7) + 
+                                       (1 - key_targets) * torch.log(1 - key_outputs + 1e-7))
+    key_loss = (key_loss * key_weights_expanded).mean()
+    
+    # MSE for mouse position
+    pos_loss = nn.functional.mse_loss(mouse_pos_outputs, mouse_pos_targets)
+    
+    # L1 regularization for mouse movement smoothness
+    # Penalize large differences between consecutive mouse predictions
+    mouse_smoothness_loss = 0.0
+    if s > 1:  # Only if we have sequences
+        # Reshape back to sequence format for temporal analysis
+        mouse_seq_outputs = mouse_pos_outputs.view(b, s, 2)
+        mouse_seq_targets = mouse_pos_targets.view(b, s, 2)
+        
+        # Calculate L1 loss on consecutive frame differences
+        mouse_diff_pred = torch.abs(mouse_seq_outputs[:, 1:] - mouse_seq_outputs[:, :-1])
+        mouse_diff_target = torch.abs(mouse_seq_targets[:, 1:] - mouse_seq_targets[:, :-1])
+        
+        # Encourage predicted movement to match target movement patterns
+        mouse_smoothness_loss = nn.functional.l1_loss(mouse_diff_pred, mouse_diff_target)
+    
+    # BCE for mouse clicks
+    click_loss = nn.functional.binary_cross_entropy(mouse_click_outputs, mouse_click_targets)
+    
+    # Balanced loss weights (added small weight for smoothness)
+    total_loss = key_loss * 2.0 + pos_loss * 1.0 + click_loss * 1.5 + mouse_smoothness_loss * 0.1
+    
+    return total_loss, key_loss, pos_loss, click_loss, mouse_smoothness_loss
+
+def train():
+    transform = transforms.Compose([
+        transforms.ToPILImage(),
+        transforms.Resize((IMG_HEIGHT, IMG_WIDTH)),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    ])
+    
+    all_datasets = []
+    all_actions = []
+    
+    for data_dir in DATA_DIRS:
+        frame_dir = os.path.join(data_dir, "frames")
+        actions_file = os.path.join(data_dir, "actions.npy")
+        
+        if os.path.exists(actions_file) and os.path.exists(frame_dir):
+            print(f"Loading dataset from: {data_dir}")
+            dataset = WoWSequenceDataset(frame_dir, actions_file, SEQUENCE_LENGTH, transform)
+            if len(dataset) > 0:
+                all_datasets.append(dataset)
+                all_actions.append(dataset.actions)
+        else:
+            print(f"Warning: Directory {data_dir} not found or missing files.")
+    
+    if not all_datasets:
+        print("No valid datasets found!")
+        return
+    
+    # Calculate balanced class weights
+    combined_actions = np.vstack(all_actions)
+    key_weights = calculate_balanced_weights(combined_actions, len(COMMON_KEYS))
+    
+    print(f"Key weights range: [{key_weights.min():.2f}, {key_weights.max():.2f}]")
+    
+    combined_dataset = ConcatDataset(all_datasets)
+    dataloader = DataLoader(combined_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=0)
+    
+    output_dim = len(COMMON_KEYS) + 4
+    model = ImprovedBehaviorCloningCNNRNN(output_dim)
+    
+    optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=1e-5)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5)
+    
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model.to(device)
+    key_weights = key_weights.to(device)
+    
+    print(f"Training on {device} for {EPOCHS} epochs...")
+    print(f"Dataset size: {len(combined_dataset)} sequences")
+    
+    # Training loop with detailed logging
+    loss_history = []
+    key_loss_history = []
+    
+    for epoch in range(EPOCHS):
+        model.train()
+        running_loss = 0.0
+        running_key_loss = 0.0
+        running_pos_loss = 0.0
+        running_click_loss = 0.0
+        running_smoothness_loss = 0.0
+        
+        for batch_idx, (sequences, actions) in enumerate(dataloader):
+            sequences, actions = sequences.to(device), actions.to(device)
+            
+            optimizer.zero_grad()
+            outputs = model(sequences)
+            
+            total_loss, key_loss, pos_loss, click_loss, smoothness_loss = improved_loss(
+                outputs, actions, len(COMMON_KEYS), device, key_weights
+            )
+            
+            total_loss.backward()
+            
+            # Gradient clipping
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=0.5)
+            
+            optimizer.step()
+            
+            running_loss += total_loss.item()
+            running_key_loss += key_loss.item()
+            running_pos_loss += pos_loss.item()
+            running_click_loss += click_loss.item()
+            running_smoothness_loss += smoothness_loss.item()
+        
+        scheduler.step(running_loss / len(dataloader))
+        
+        avg_loss = running_loss / len(dataloader)
+        avg_key_loss = running_key_loss / len(dataloader)
+        avg_pos_loss = running_pos_loss / len(dataloader)
+        avg_click_loss = running_click_loss / len(dataloader)
+        avg_smoothness_loss = running_smoothness_loss / len(dataloader)
+        
+        loss_history.append(avg_loss)
+        key_loss_history.append(avg_key_loss)
+        
+        print(f"Epoch {epoch + 1}/{EPOCHS}")
+        print(f"  Total Loss: {avg_loss:.5f}")
+        print(f"  Key Loss: {avg_key_loss:.5f}")
+        print(f"  Mouse Pos Loss: {avg_pos_loss:.5f}")
+        print(f"  Mouse Click Loss: {avg_click_loss:.5f}")
+        print(f"  Mouse Smoothness Loss: {avg_smoothness_loss:.5f}")
+        print(f"  Learning Rate: {scheduler.optimizer.param_groups[0]['lr']:.6f}")
+        
+        # Early stopping if key loss is very low (model learned to ignore keys)
+        if avg_key_loss < 0.001:
+            print("⚠️  WARNING: Key loss is very low - model may be ignoring keys!")
+    
+    # Save model
+    torch.save(model.state_dict(), MODEL_SAVE_PATH)
+    print(f"✅ Model saved to {MODEL_SAVE_PATH}")
+    
+    # Plot training loss
+    plt.figure(figsize=(12, 8))
+    
+    plt.subplot(2, 1, 1)
+    plt.plot(loss_history)
+    plt.title('Total Training Loss')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.grid(True)
+    
+    plt.subplot(2, 1, 2)
+    plt.plot(key_loss_history)
+    plt.title('Key Loss (Should not be too low)')
+    plt.xlabel('Epoch')
+    plt.ylabel('Key Loss')
+    plt.grid(True)
+    
+    plt.tight_layout()
+    plt.savefig('improved_training_loss.png')
+    plt.show()
+
+if __name__ == "__main__":
+    train()

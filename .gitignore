@@ -1,0 +1,114 @@
+# AI Game Automation - .gitignore
+
+# Training Data (can be large)
+frames/
+*.png
+*.jpg
+*.jpeg
+actions.npy
+data_human/
+recordings/
+
+# Trained Models (can be large)
+*.pt
+*.pth
+model_*.pt
+model_*.pth
+checkpoints/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyTorch
+*.pth
+*.pt
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Virtual Environments
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.env
+ai_game_venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Windows
+*.tmp
+*.temp
+dxdiag_temp.txt
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/
+
+# Performance monitoring
+*.prof
+
+# Game-specific
+screenshots/
+replays/
+
+# Large data files
+*.zip
+*.rar
+*.7z
+*.tar.gz
+
+# Personal configurations
+config_personal.py
+settings_local.py
+
+# Testing
+test_results/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Documentation builds
+docs/_build/
+site/ 
