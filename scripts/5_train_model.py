@@ -18,9 +18,9 @@ from config import *
 validate_config()
 
 # Use training-specific dimensions from config
-IMG_HEIGHT = TRAIN_IMG_HEIGHT
-IMG_WIDTH = TRAIN_IMG_WIDTH
-SEQUENCE_LENGTH = 3  # Reduced sequence length for memory efficiency
+# Use training-specific dimensions directly from config
+# TRAIN_IMG_HEIGHT and TRAIN_IMG_WIDTH are used directly throughout the code.
+# Sequence length is set directly to 3 for memory efficiency.
 
 class WoWSequenceDataset(Dataset):
     def __init__(self, frame_dir, actions_file, sequence_length, transform=None):
