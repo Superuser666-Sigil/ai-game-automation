@@ -1,12 +1,34 @@
 # ⚙️ Configuration Guide
 
-Advanced configuration options for AI Game Automation.
+**New in v2.0**: All configuration is now centralized in `config.py` for easy customization!
+
+## 🎯 Quick Configuration
+
+**All settings are in one file: `config.py`**
+
+### Essential Settings
+
+```python
+# === TRAINING PARAMETERS ===
+BATCH_SIZE = 32          # Higher = faster training, more memory
+LEARNING_RATE = 1e-4     # Lower = more stable training
+EPOCHS = 50              # More epochs = better learning (usually)
+
+# === IMAGE SETTINGS ===
+# Recording dimensions (full resolution for accuracy)
+IMG_WIDTH, IMG_HEIGHT = 960, 540
+# Training dimensions (smaller for speed)
+TRAIN_IMG_WIDTH, TRAIN_IMG_HEIGHT = 224, 224
+
+# === KEYS TO LEARN ===
+COMMON_KEYS = ['w', 'a', 's', 'd', ...]  # Customize for your game
+```
 
 ## 📊 Model Configuration
 
-### Choosing Model Size
+### Automated Model Sizing
 
-Use the model configuration optimizer to get recommendations:
+Get intelligent recommendations:
 ```bash
 cd scripts
 python 4.5_choose_model_configuration.py
@@ -17,28 +39,6 @@ This analyzes your:
 - System hardware capabilities  
 - Available memory and storage
 
-### Manual Configuration
-
-Edit `scripts/5_train_model.py` to customize:
-
-```python
-# Model Architecture
-IMG_WIDTH, IMG_HEIGHT = 960, 540    # Input resolution
-BATCH_SIZE = 8                      # Training batch size
-EPOCHS = 50                         # Training iterations
-SEQUENCE_LENGTH = 5                 # Number of frames in sequence
-
-# LSTM Configuration
-lstm_hidden_size = 256              # LSTM hidden units
-lstm_num_layers = 2                 # Number of LSTM layers
-
-# CNN Complexity
-# Modify the ImprovedBehaviorCloningCNNRNN class:
-# - Small: fewer channels (16, 32, 64)
-# - Medium: current (32, 64, 128) 
-# - Large: more channels (64, 128, 256)
-```
-
 ### Model Size Comparison
 
 | Configuration | File Size | Training RAM | Training Time | Accuracy |
@@ -47,41 +47,51 @@ lstm_num_layers = 2                 # Number of LSTM layers
 | Medium        | 44.4 MB   | 371 MB       | 15-90 min     | Better   |
 | Large         | 518.6 MB  | 1767 MB      | 45-240 min    | Best     |
 
-## 🎮 Recording Configuration
+## 🎮 Game-Specific Configuration
 
-### Frame Rate and Resolution
+### Key Mapping for Your Game
 
-Edit `scripts/3_record_data.py`:
+Edit `COMMON_KEYS` in `config.py`:
 
 ```python
-# Screen capture settings
-IMG_WIDTH = 960     # Capture width
-IMG_HEIGHT = 540    # Capture height
-FPS = 10           # Frames per second
+# Example: MOBA/RTS Games
+COMMON_KEYS = [
+    'q', 'w', 'e', 'r',           # Abilities
+    '1', '2', '3', '4', '5', '6',  # Items/Hotkeys
+    'a', 's', 'd',                # Attack/Stop/Hold
+    'tab', 'space', 'alt'         # UI toggles
+]
+
+# Example: FPS Games  
+COMMON_KEYS = [
+    'w', 'a', 's', 'd',           # Movement
+    'space', 'shift', 'ctrl',     # Jump/Run/Crouch
+    'r', 'f', 'g',                # Reload/Use/Grenade
+    '1', '2', '3', '4', '5'       # Weapon switching
+]
+
+# Example: RPG Games
+COMMON_KEYS = [
+    'w', 'a', 's', 'd',           # Movement
+    '1', '2', '3', '4', '5',      # Hotbar skills
+    'i', 'm', 'c', 'b',          # Inventory/Map/Character
+    'tab', 'enter', 'space'      # Target/Chat/Interact
+]
+```
+
+### Recording Settings
+
+All in `config.py`:
+
+```python
+# === RECORDING & INFERENCE ===
+RECORDING_FPS = 10      # Frames per second (10-15 recommended)
+IMG_WIDTH = 960         # Recording resolution width
+IMG_HEIGHT = 540        # Recording resolution height
 
 # Performance vs Quality tradeoffs:
 # Higher resolution = better accuracy, more memory
 # Higher FPS = smoother gameplay, larger files
-```
-
-### Key Mapping
-
-Customize which keys to track in `COMMON_KEYS`:
-
-```python
-COMMON_KEYS = [
-    # Movement
-    'w', 'a', 's', 'd', 'space', 'shift', 'ctrl',
-    
-    # Actions (customize for your game)
-    'q', 'e', 'r', 'f', 'g', 'c', 'x', 'z',
-    
-    # Numbers for hotkeys
-    '1', '2', '3', '4', '5', '6', '7', '8', '9', '0',
-    
-    # Function keys
-    'f1', 'f2', 'f3', 'f4', 'f5', 'tab', 'enter', 'backspace'
-]
 ```
 
 ## 🎯 Inference Configuration

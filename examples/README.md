@@ -79,15 +79,21 @@ Pre-trained models for demonstration:
 
 ### For Puzzle Games
 ```bash
-# Use the puzzle game configuration
-cp examples/configs/puzzle_game_config.py scripts/
+# Edit config.py for puzzle games:
+# - Set COMMON_KEYS = ['up', 'down', 'left', 'right', 'space', 'enter']
+# - Set BATCH_SIZE = 16 (smaller for simple games)
+# - Set TRAIN_IMG_WIDTH/HEIGHT = 160, 120 (lower res for pixel art)
+
 python scripts/5_train_model.py
 ```
 
-### For Strategy Games
+### For Strategy Games  
 ```bash
-# Use the strategy game configuration
-cp examples/configs/strategy_game_config.py scripts/
+# Edit config.py for strategy games:
+# - Set COMMON_KEYS = ['q','w','e','r','1','2','3','4','5','a','s','d','ctrl','shift']
+# - Set BATCH_SIZE = 32 (higher for complex patterns)
+# - Keep TRAIN_IMG_WIDTH/HEIGHT = 224, 224 (full res for detail)
+
 python scripts/5_train_model.py
 ```
 

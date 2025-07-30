@@ -103,9 +103,14 @@ python scripts/4_analyze_data_quality.py
 
 # If loss is stagnating (not changing between epochs):
 # - Training parameters have been optimized for better convergence
-# - Learning rate reduced from 5e-4 to 1e-4
+# - Learning rate reduced from 5e-4 to 1e-4 in config.py
 # - Loss weights balanced for better learning
 # - Try recording more diverse gameplay data
+
+# Configuration issues:
+# - Check if config.py imports correctly
+# - Verify all required variables are defined
+# - Run validation: python -c "from config import validate_config; validate_config()"
 ```
 
 ## 🎯 AI Performance Issues
@@ -196,6 +201,36 @@ pip install torch-directml
 - 55-60% GPU usage = GPU acceleration working
 - 80% CPU usage = Full system utilization (good!)
 - This indicates optimal performance, not an issue
+
+## ⚙️ Configuration Issues
+
+### "Config import errors" or "Missing variables"
+**Problem**: Training script fails to import or find config variables
+**Solutions**:
+```bash
+# Test config import
+python -c "from config import *; print('Config works!')"
+
+# If import fails, check file location:
+# config.py should be in project root, not scripts/ folder
+
+# Test validation
+python -c "from config import validate_config; validate_config()"
+
+# Check for typos in variable names in config.py
+```
+
+### "Training crashes with undefined variables"
+**Problem**: Script references variables not in config
+**Solutions**:
+```bash
+# Recent fixes added error handling for:
+# - Missing IMG_HEIGHT/IMG_WIDTH definitions
+# - Undefined all_datasets/all_actions variables
+# - Missing SEQUENCE_LENGTH
+
+# Update to latest version or check scripts/5_train_model.py for fixes
+```
 
 ## 🔧 Game-Specific Issues
 

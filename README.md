@@ -6,12 +6,13 @@ Train an AI to play games by learning from your gameplay! This project uses beha
 
 - **🎯 Easy Setup**: Numbered scripts guide you through the entire process
 - **🚀 DirectML GPU Acceleration**: Native AMD/Intel GPU support on Windows (3-6x faster training)
-- **🧠 Smart GPU Detection**: Automatically detects and configures NVIDIA/AMD/CPU
+- **🧠 Smart GPU Detection**: Automatically detects and configures NVIDIA/AMD/CPU with fallback
+- **⚙️ Centralized Configuration**: Single `config.py` file controls all settings with validation
 - **📊 Data Quality Analysis**: Ensures your training data is good before training
-- **⚙️ Intelligent Model Sizing**: Recommends optimal configurations for your hardware
+- **🤖 Intelligent Model Sizing**: Recommends optimal configurations for your hardware
 - **🎮 Real-time Inference**: Smooth mouse movement with temporal smoothing
 - **🛠️ Comprehensive Debugging**: Tools to understand and improve your AI's performance
-- **⚡ Optimized Training**: Balanced loss functions and adaptive learning rates
+- **⚡ Optimized Training**: Balanced loss functions, robust error handling, and adaptive learning rates
 
 ## 🚀 Quick Start
 
@@ -82,9 +83,11 @@ See [CONTRIBUTING.md](docs/CONTRIBUTING.md) for detailed guidelines.
 
 ```
 ai-game-automation/
+├── config.py          # Centralized configuration (EDIT THIS TO CUSTOMIZE)
 ├── scripts/           # Main Python scripts (0-7, numbered workflow)
 ├── docs/             # Detailed documentation and guides
 ├── examples/         # Sample data and pre-trained models
+├── data_human/       # Your recorded gameplay data
 ├── README.md         # This file
 └── requirements.txt  # Python dependencies
 ```
@@ -100,6 +103,14 @@ Built with PyTorch, OpenCV, and inspired by behavior cloning research. Thanks to
 ---
 
 **Ready to get started?** Run `python scripts/0_setup.py` and follow the numbered workflow above! 
+
+## ⚙️ Quick Configuration
+
+**Edit `config.py` to customize your setup:**
+- **Keys to learn**: Modify `COMMON_KEYS` list for your game
+- **Training speed**: Adjust `BATCH_SIZE` and `LEARNING_RATE`
+- **Model size**: Change `TRAIN_IMG_WIDTH/HEIGHT` for performance vs accuracy
+- **Data location**: Set `DATA_DIR` for your recordings
 
 **🚀 GPU Acceleration**: For AMD/Intel GPUs, the setup will automatically configure DirectML for 3-6x faster training!
 
