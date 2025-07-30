@@ -12,15 +12,37 @@ import matplotlib.pyplot as plt
 
 # Import shared configuration
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from config import *
-
-# Validate configuration consistency
-validate_config()
+try:
+    from config import *
+    # Validate configuration consistency
+    validate_config()
+    print("✅ Configuration loaded and validated successfully")
+except ImportError as e:
+    print(f"❌ Error importing config: {e}")
+    print("💡 Make sure config.py exists in the project root directory")
+    exit(1)
+except Exception as e:
+    print(f"⚠️ Configuration validation warning: {e}")
+    print("🔄 Continuing with default values...")
 
 # Use training-specific dimensions from config
-# Use training-specific dimensions directly from config
-# TRAIN_IMG_HEIGHT and TRAIN_IMG_WIDTH are used directly throughout the code.
-# Sequence length is set directly to 3 for memory efficiency.
+try:
+    IMG_HEIGHT = TRAIN_IMG_HEIGHT
+    IMG_WIDTH = TRAIN_IMG_WIDTH
+    print(f"📐 Using training dimensions: {IMG_WIDTH}x{IMG_HEIGHT}")
+except NameError:
+    print("⚠️ Training dimensions not found in config, using defaults")
+    IMG_HEIGHT = 224
+    IMG_WIDTH = 224
+
+SEQUENCE_LENGTH = 3  # Reduced sequence length for memory efficiency
+
+# Validate required config variables
+required_vars = ['COMMON_KEYS', 'BATCH_SIZE', 'EPOCHS', 'LEARNING_RATE', 'DATA_DIR', 'FRAME_DIR', 'ACTIONS_FILE', 'MODEL_PATH']
+missing_vars = [var for var in required_vars if var not in globals()]
+if missing_vars:
+    print(f"❌ Missing required config variables: {missing_vars}")
+    exit(1)
 
 class WoWSequenceDataset(Dataset):
     def __init__(self, frame_dir, actions_file, sequence_length, transform=None):
@@ -292,6 +314,10 @@ def train():
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     ])
+    
+    # Initialize dataset containers
+    all_datasets = []
+    all_actions = []
     
     # Use centralized config paths
     frame_dir = FRAME_DIR
