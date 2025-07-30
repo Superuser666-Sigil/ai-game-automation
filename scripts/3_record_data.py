@@ -1,4 +1,5 @@
-# 3_record_data.py - Human Data Recording
+# Human Data Recording Script
+# This script captures screen frames and user input (keyboard and mouse) for data recording purposes.
 import os
 import sys
 import cv2
