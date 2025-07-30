@@ -192,6 +192,44 @@ def calculate_balanced_weights(actions, num_keys):
     
     return torch.tensor(weights, dtype=torch.float32)
 
+def select_device():
+    """Smart device selection: DirectML -> ROCm/CUDA -> CPU"""
+    device = None
+    device_name = "Unknown"
+    
+    # Try DirectML first (best for AMD GPUs on Windows)
+    try:
+        import torch_directml
+        device = torch_directml.device()
+        device_name = "DirectML (AMD GPU acceleration)"
+        print("🚀 Using DirectML for GPU acceleration!")
+    except ImportError:
+        pass
+    
+    # Fallback to ROCm/CUDA
+    if device is None:
+        if torch.cuda.is_available():
+            device = torch.device("cuda")
+            device_name = f"CUDA (GPU: {torch.cuda.get_device_name()})"
+            print("⚡ Using CUDA for GPU acceleration!")
+        else:
+            # Check for ROCm (AMD's CUDA alternative)
+            try:
+                if hasattr(torch.version, 'hip') and torch.version.hip is not None:
+                    device = torch.device("cuda")  # ROCm uses cuda device interface
+                    device_name = "ROCm (AMD GPU acceleration)"
+                    print("🔥 Using ROCm for AMD GPU acceleration!")
+            except:
+                pass
+    
+    # Final fallback to CPU
+    if device is None:
+        device = torch.device("cpu")
+        device_name = "CPU (no GPU acceleration)"
+        print("💻 Using CPU (consider installing DirectML for GPU acceleration)")
+    
+    return device, device_name
+
 def improved_loss(outputs, targets, num_keys, device, key_weights):
     b, s, _ = outputs.shape
     
@@ -294,40 +332,8 @@ def train():
     optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=1e-5)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.7, patience=10)
     
-    # Smart device selection: DirectML -> ROCm/CUDA -> CPU
-    device = None
-    device_name = "Unknown"
-    
-    # Try DirectML first (best for AMD GPUs on Windows)
-    try:
-        import torch_directml
-        device = torch_directml.device()
-        device_name = "DirectML (AMD GPU acceleration)"
-        print("🚀 Using DirectML for GPU acceleration!")
-    except ImportError:
-        pass
-    
-    # Fallback to ROCm/CUDA
-    if device is None:
-        if torch.cuda.is_available():
-            device = torch.device("cuda")
-            device_name = f"CUDA (GPU: {torch.cuda.get_device_name()})"
-            print("⚡ Using CUDA for GPU acceleration!")
-        else:
-            # Check for ROCm (AMD's CUDA alternative)
-            try:
-                if hasattr(torch.version, 'hip') and torch.version.hip is not None:
-                    device = torch.device("cuda")  # ROCm uses cuda device interface
-                    device_name = "ROCm (AMD GPU acceleration)"
-                    print("🔥 Using ROCm for AMD GPU acceleration!")
-            except:
-                pass
-    
-    # Final fallback to CPU
-    if device is None:
-        device = torch.device("cpu")
-        device_name = "CPU (no GPU acceleration)"
-        print("💻 Using CPU (consider installing DirectML for GPU acceleration)")
+    # Smart device selection using utility function
+    device, device_name = select_device()
     
     model.to(device)
     key_weights = key_weights.to(device)
