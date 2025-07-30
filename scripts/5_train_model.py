@@ -16,7 +16,7 @@ BATCH_SIZE = 2  # Reduced for DirectML GPU memory constraints
 EPOCHS = 50  # More epochs for better learning
 MODEL_SAVE_PATH = "model_improved.pt"
 SEQUENCE_LENGTH = 3  # Reduced sequence length for memory efficiency
-LEARNING_RATE = 5e-4  # Lower learning rate for stability
+LEARNING_RATE = 1e-4  # Reduced from 5e-4 for better convergence
 
 COMMON_KEYS = [
     'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p',
@@ -246,8 +246,8 @@ def improved_loss(outputs, targets, num_keys, device, key_weights):
     click_loss = -torch.mean(mouse_click_targets * torch.log(mouse_click_outputs_clamped) + 
                             (1 - mouse_click_targets) * torch.log(1 - mouse_click_outputs_clamped))
     
-    # Balanced loss weights (added small weight for smoothness)
-    total_loss = key_loss * 2.0 + pos_loss * 1.0 + click_loss * 1.5 + mouse_smoothness_loss * 0.1
+    # Balanced loss weights (reduced key loss dominance for better learning)
+    total_loss = key_loss * 1.0 + pos_loss * 1.0 + click_loss * 1.0 + mouse_smoothness_loss * 0.05
     
     return total_loss, key_loss, pos_loss, click_loss, mouse_smoothness_loss
 
@@ -292,7 +292,7 @@ def train():
     model = ImprovedBehaviorCloningCNNRNN(output_dim)
     
     optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=1e-5)
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.7, patience=10)
     
     # Smart device selection: DirectML -> ROCm/CUDA -> CPU
     device = None
@@ -359,8 +359,8 @@ def train():
             
             total_loss.backward()
             
-            # Gradient clipping
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=0.5)
+            # Gradient clipping (increased for better learning)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             
             optimizer.step()
             
