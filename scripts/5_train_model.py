@@ -1,5 +1,6 @@
-# 3_train_improved_model.py - FIXED VERSION
+# 5_train_model.py - Improved Behavior Cloning with DirectML Support
 import os
+import sys
 import numpy as np
 import cv2
 import torch
@@ -9,22 +10,14 @@ from torch.utils.data import Dataset, DataLoader, ConcatDataset
 from torchvision import transforms
 import matplotlib.pyplot as plt
 
-# === CONFIG ===
-DATA_DIRS = ["data_human"]
-IMG_WIDTH, IMG_HEIGHT = 960, 540
-BATCH_SIZE = 2  # Reduced for DirectML GPU memory constraints
-EPOCHS = 50  # More epochs for better learning
-MODEL_SAVE_PATH = "model_improved.pt"
-SEQUENCE_LENGTH = 3  # Reduced sequence length for memory efficiency
-LEARNING_RATE = 1e-4  # Reduced from 5e-4 for better convergence
+# Import shared configuration
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from config import *
 
-COMMON_KEYS = [
-    'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p',
-    'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', '1', '2', '3', '4', '5', '6',
-    '7', '8', '9', '0', 'space', 'shift', 'ctrl', 'alt', 'tab', 'enter', 'backspace',
-    'up', 'down', 'left', 'right', 'f1', 'f3', 'f4', 'f5', 'f6', 'f7', 'f8', 'f9',
-    'f10', 'f11', 'f12', '-', '=', '[', ']', '\\', ';', '\'', ',', '.', '/'
-]
+# Override image dimensions for training (resize for efficiency)
+IMG_HEIGHT = 224
+IMG_WIDTH = 224
+SEQUENCE_LENGTH = 3  # Reduced sequence length for memory efficiency
 
 class WoWSequenceDataset(Dataset):
     def __init__(self, frame_dir, actions_file, sequence_length, transform=None):
@@ -285,7 +278,7 @@ def improved_loss(outputs, targets, num_keys, device, key_weights):
                             (1 - mouse_click_targets) * torch.log(1 - mouse_click_outputs_clamped))
     
     # Balanced loss weights (reduced key loss dominance for better learning)
-    total_loss = key_loss * 1.0 + pos_loss * 1.0 + click_loss * 1.0 + mouse_smoothness_loss * 0.05
+    total_loss = key_loss * KEY_LOSS_WEIGHT + pos_loss * POS_LOSS_WEIGHT + click_loss * CLICK_LOSS_WEIGHT + mouse_smoothness_loss * SMOOTHNESS_LOSS_WEIGHT
     
     return total_loss, key_loss, pos_loss, click_loss, mouse_smoothness_loss
 
@@ -329,8 +322,8 @@ def train():
     output_dim = len(COMMON_KEYS) + 4
     model = ImprovedBehaviorCloningCNNRNN(output_dim)
     
-    optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=1e-5)
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.7, patience=10)
+    optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=SCHEDULER_FACTOR, patience=SCHEDULER_PATIENCE)
     
     # Smart device selection using utility function
     device, device_name = select_device()
@@ -366,7 +359,7 @@ def train():
             total_loss.backward()
             
             # Gradient clipping (increased for better learning)
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=GRADIENT_CLIP_NORM)
             
             optimizer.step()
             

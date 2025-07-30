@@ -1,4 +1,6 @@
-# 5_run_improved_inference.py - FIXED VERSION
+# 6_run_inference.py - Improved Inference with DirectML Support
+import os
+import sys
 import torch
 import torch.nn as nn
 import numpy as np
@@ -11,25 +13,14 @@ from pynput.mouse import Controller as MouseController, Button
 from pynput import keyboard
 from torchvision import transforms
 
-# === CONFIG ===
+# Import shared configuration
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from config import *
+
+# === SCREEN CONFIG ===
 with mss.mss() as sct: 
     monitor = sct.monitors[1]
 SCREEN_WIDTH, SCREEN_HEIGHT = monitor["width"], monitor["height"]
-MODEL_PATH = "model_improved.pt"  # Use improved model
-IMG_WIDTH, IMG_HEIGHT = 960, 540
-KEY_THRESHOLD = 0.15  # Much lower threshold for key presses
-CLICK_THRESHOLD = 0.3  # Lower click threshold too
-SEQUENCE_LENGTH = 5
-SMOOTH_FACTOR = 0.7  # Less aggressive mouse smoothing
-INFERENCE_FPS = 10
-
-COMMON_KEYS = [
-    'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p',
-    'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', '1', '2', '3', '4', '5', '6',
-    '7', '8', '9', '0', 'space', 'shift', 'ctrl', 'alt', 'tab', 'enter', 'backspace',
-    'up', 'down', 'left', 'right', 'f1', 'f3', 'f4', 'f5', 'f6', 'f7', 'f8', 'f9',
-    'f10', 'f11', 'f12', '-', '=', '[', ']', '\\', ';', '\'', ',', '.', '/'
-]
 
 KEY_MAPPING = {
     'space': Key.space, 'shift': Key.shift, 'ctrl': Key.ctrl, 'alt': Key.alt, 'tab': Key.tab,
@@ -178,8 +169,6 @@ target_mouse_pos = (SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2)
 
 # Temporal smoothing variables for mouse movement
 prev_mouse_pos = None
-MOUSE_SMOOTHING_ALPHA = 0.2  # Lower = more smoothing (0.1-0.3 range recommended)
-                              # 0.1 = very smooth, 0.3 = more responsive
 
 # Improved transforms to match training
 transform = transforms.Compose([

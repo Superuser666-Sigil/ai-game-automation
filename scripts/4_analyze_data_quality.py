@@ -1,14 +1,18 @@
 # 4_analyze_data_quality.py - Analyze Data Collection Quality
-import numpy as np
 import os
+import sys
+import numpy as np
 import matplotlib.pyplot as plt
+
+# Import shared configuration
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from config import *
 
 def analyze_data_quality():
     """Analyze the quality of collected data"""
     
-    data_dir = "data_human"
-    actions_file = os.path.join(data_dir, "actions.npy")
-    frames_dir = os.path.join(data_dir, "frames")
+    actions_file = ACTIONS_FILE
+    frames_dir = FRAME_DIR
     
     if not os.path.exists(actions_file):
         print("❌ No actions.npy file found!")
@@ -39,13 +43,6 @@ def analyze_data_quality():
         print("✅ Actions and frames count match")
     
     # Analyze key press data
-    COMMON_KEYS: list[str] = [
-        'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p',
-        'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', '1', '2', '3', '4', '5', '6',
-        '7', '8', '9', '0', 'space', 'shift', 'ctrl', 'alt', 'tab', 'enter', 'backspace',
-        'up', 'down', 'left', 'right', 'f1', 'f3', 'f4', 'f5', 'f6', 'f7', 'f8', 'f9',
-        'f10', 'f11', 'f12', '-', '=', '[', ']', '\\', ';', '\'', ',', '.', '/'
-    ]
     
     key_actions = actions[:, :len(COMMON_KEYS)]
     mouse_actions = actions[:, len(COMMON_KEYS):len(COMMON_KEYS)+2]
