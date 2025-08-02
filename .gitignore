@@ -6,7 +6,6 @@ frames/
 *.jpg
 *.jpeg
 actions.npy
-data_human/
 recordings/
 
 # Trained Models (can be large)
