@@ -23,8 +23,8 @@ Thank you for your interest in contributing! This project welcomes contributions
 1. **Fork the repository**
 2. **Clone your fork**: `git clone https://github.com/yourusername/ai-game-automation.git`
 3. **Create a branch**: `git checkout -b feature/your-feature-name`
-4. **Install dependencies**: `cd scripts && pip install -r requirements.txt`
-5. **Test the installation**: `python 1_check_dependencies.py`
+4. **Install dependencies**: `python scripts/0_setup.py`
+5. **Test the installation**: `python scripts/2_verify_system_setup.py`
 
 #### Development Setup
 ```bash
@@ -45,6 +45,8 @@ black scripts/
 - **Handle errors gracefully**: Use try/except with informative messages
 - **Test on Windows**: Primary target platform
 - **Consider performance**: ML models can be resource-intensive
+- **Use centralized config**: All settings should be in `config.py`
+- **Maintain consistency**: Follow the refactored architecture patterns
 
 #### Pull Request Process
 1. **Update documentation** if needed
@@ -52,6 +54,7 @@ black scripts/
 3. **Ensure compatibility** with existing features
 4. **Test on different hardware** if possible (CPU/GPU)
 5. **Create detailed PR description** with screenshots/examples
+6. **Verify configuration validation** works with your changes
 
 ## 📝 Documentation Contributions
 
@@ -61,6 +64,8 @@ black scripts/
 - **Troubleshooting**: Solutions for common issues
 - **Performance optimization**: Tips for better training/inference
 - **Video tutorials**: Recording and editing demos
+- **Oversampling guides**: How to tune for different games
+- **Validation strategies**: Best practices for model evaluation
 
 ### Documentation Standards
 - **Clear language**: Avoid unnecessary jargon
@@ -68,6 +73,46 @@ black scripts/
 - **Visual aids**: Screenshots and diagrams help
 - **Cross-references**: Link to related sections
 - **Test instructions**: Verify they work for new users
+- **Version compatibility**: Note which version features apply to
+
+## 🧠 Technical Contributions
+
+### Model Architecture Improvements
+The current system uses a consistent LSTM-based architecture. When contributing:
+
+**Architecture Guidelines:**
+- **Maintain compatibility**: Ensure new models work with existing scripts
+- **Use centralized config**: All parameters should be configurable via `config.py`
+- **Include validation**: Add proper train/validation splits
+- **Handle oversampling**: Support the class balancing features
+- **Document changes**: Explain why your architecture is better
+
+**Example contribution:**
+```python
+# In config.py, add new architecture options
+MODEL_ARCHITECTURE = "lstm"  # or "transformer", "cnn_only", etc.
+ATTENTION_HEADS = 8          # For transformer models
+```
+
+### Training Improvements
+The refactored system includes oversampling and validation. When improving training:
+
+**Training Guidelines:**
+- **Preserve oversampling**: Don't break the class balancing features
+- **Maintain validation**: Keep the train/validation split functionality
+- **Use F1-score**: Continue using F1-score for model saving
+- **Add metrics**: Include precision, recall, and other relevant metrics
+- **Handle edge cases**: Graceful handling of small datasets
+
+### Configuration System
+The centralized configuration system is a key feature. When modifying:
+
+**Config Guidelines:**
+- **Add validation**: Include checks for new parameters
+- **Provide defaults**: Sensible defaults for all new settings
+- **Document clearly**: Explain what each parameter does
+- **Maintain backward compatibility**: Don't break existing configs
+- **Group logically**: Organize related parameters together
 
 ## 🎮 Example Contributions
 
@@ -80,11 +125,12 @@ We welcome high-quality training datasets:
 - **Action summary**: Which keys/mouse actions used
 - **Quality metrics**: Key press rate, complexity level
 - **Legal verification**: Confirm you own the game
+- **Oversampling analysis**: How well the data works with oversampling
 
 **How to contribute:**
 1. **Record 2-5 minutes** of gameplay
-2. **Test data quality**: Run `4_analyze_data_quality.py`
-3. **Package files**: Create zip with frames/ and actions.npy
+2. **Test data quality**: Run `python scripts/4_analyze_data_quality.py`
+3. **Package files**: Create zip with `data_human/frames/` and `data_human/actions.npy`
 4. **Document thoroughly**: README with all details
 5. **Submit via GitHub release** or issue
 
@@ -96,108 +142,130 @@ Share successful models with the community:
 - **Documentation**: Training data, configuration used
 - **Model size**: <100MB preferred for sharing
 - **Game compatibility**: Specify which games it works with
+- **Oversampling info**: Document the oversampling settings used
 
 **Contribution process:**
-1. **Train and validate** your model
-2. **Test performance**: Use debug tools to verify
-3. **Create documentation**: Training process, results
-4. **Package model**: Include config files
-5. **Submit with examples**: Show it working
+1. **Train with good data**: Use the refactored training system
+2. **Test thoroughly**: Verify performance on validation data
+3. **Document configuration**: Include all `config.py` settings
+4. **Package model**: Include model file and configuration
+5. **Submit with examples**: Show the model in action
 
-## 🔧 Technical Contributions
+## 🔧 Development Workflow
 
-### Priority Areas
-- **Cross-platform support**: Linux and macOS compatibility
+### Testing Your Changes
+```bash
+# 1. Verify system setup
+python scripts/2_verify_system_setup.py
+
+# 2. Test data recording
+python scripts/3_record_data.py  # Record small test dataset
+
+# 3. Test data analysis
+python scripts/4_analyze_data_quality.py
+
+# 4. Test training
+python scripts/5_train_model.py
+
+# 5. Test inference
+python scripts/6_run_inference.py
+
+# 6. Test debugging
+python scripts/7_debug_model_output.py
+```
+
+### Code Quality Checks
+```bash
+# Format code
+black scripts/ config.py
+
+# Check for issues
+flake8 scripts/ config.py
+
+# Run configuration validation
+python -c "from config import validate_config; validate_config()"
+```
+
+### Performance Testing
+- **Test on CPU**: Ensure CPU fallback works
+- **Test on GPU**: Verify GPU acceleration (if available)
+- **Memory profiling**: Check for memory leaks
+- **Speed benchmarking**: Compare performance with previous versions
+
+## 📋 Contribution Checklist
+
+Before submitting a contribution:
+
+### For Code Changes
+- [ ] **Follows project structure**: Uses centralized config and consistent patterns
+- [ ] **Includes tests**: New functionality has appropriate tests
+- [ ] **Updates documentation**: README, config docs, or troubleshooting updated
+- [ ] **Handles errors**: Graceful error handling with informative messages
+- [ ] **Maintains compatibility**: Works with existing features
+- [ ] **Validates configuration**: New settings work with config validation
+
+### For Documentation
+- [ ] **Clear and accurate**: Information is correct and easy to understand
+- [ ] **Includes examples**: Code examples and command-line instructions
+- [ ] **Cross-referenced**: Links to related documentation
+- [ ] **Tested**: Instructions have been verified to work
+- [ ] **Version appropriate**: Content matches current project version
+
+### For Datasets/Models
+- [ ] **High quality**: Good key press rate and diverse actions
+- [ ] **Well documented**: Clear description of contents and usage
+- [ ] **Legal**: Proper ownership and licensing
+- [ ] **Tested**: Verified to work with current system
+- [ ] **Optimized**: Appropriate size and format
+
+## 🎯 Current Development Priorities
+
+### High Priority
 - **Performance optimization**: Faster training and inference
-- **Model architectures**: Better CNN/RNN designs
-- **Data augmentation**: Improved training techniques
-- **Real-time optimization**: Lower latency inference
-- **Memory management**: Handling large datasets
-- **GPU support**: Better CUDA/ROCm integration
+- **Better oversampling**: Improved class balancing techniques
+- **Game compatibility**: Support for more game types
+- **Error handling**: More robust error recovery
 
-### Research Contributions
-- **Behavior cloning improvements**: Novel loss functions
-- **Data efficiency**: Training with less data
-- **Generalization**: Models that work across games
-- **Real-time adaptation**: Online learning techniques
-- **Multi-modal input**: Voice, eye tracking, etc.
+### Medium Priority
+- **Model architectures**: Alternative neural network designs
+- **Data augmentation**: Techniques to improve training data
+- **GUI interface**: User-friendly graphical interface
+- **Multi-game support**: Training on multiple games simultaneously
 
-## 🎯 Game-Specific Contributions
+### Low Priority
+- **Mobile support**: Android/iOS compatibility
+- **Cloud training**: Distributed training capabilities
+- **Real-time learning**: Online learning during gameplay
+- **Advanced analytics**: Detailed performance metrics
 
-### Supported Games
-Help expand game compatibility:
+## 🤝 Community Guidelines
 
-**Currently working well:**
-- Simple 2D puzzle games
-- Turn-based strategy games
-- Slower-paced RPGs
+### Communication
+- **Be respectful**: Treat all contributors with respect
+- **Be helpful**: Provide constructive feedback and assistance
+- **Be patient**: Some issues may take time to resolve
+- **Be clear**: Use clear, concise language in discussions
 
-**Need community help:**
-- Fast-paced FPS games
-- Complex MMORPGs
-- Real-time strategy games
-- Fighting games
-
-### Game Integration
-- **Configuration templates**: Optimal settings per game
-- **Key mapping guides**: Game-specific control schemes
-- **Anti-cheat compatibility**: Which games allow automation
-- **Performance profiles**: Hardware requirements per game
-
-## 🚀 Community
-
-### Discord/Forum (Future)
-- **Share results**: Show off your trained models
-- **Get help**: Troubleshoot issues together  
-- **Coordinate development**: Discuss features and bugs
-- **Research discussions**: AI/ML techniques and papers
-
-### Recognition
-Contributors will be:
-- **Listed in README**: Credit for significant contributions
-- **Tagged in releases**: When features ship
-- **Highlighted in docs**: For documentation improvements
-- **Featured in examples**: Successful models and datasets
-
-## ⚖️ Legal and Ethical Guidelines
-
-### Responsible Use
-- **Respect game developers**: Don't violate terms of service
-- **No cheating in competitive games**: Focus on single-player or practice
-- **Educational purpose**: Emphasize learning AI/ML concepts
-- **Accessibility focus**: Help users with disabilities
-
-### Content Guidelines
-- **No copyrighted content**: Don't include game assets
-- **Focus on mechanics**: Gameplay patterns, not story/art
-- **Open source spirit**: Share knowledge, help others learn
-- **Inclusive community**: Welcoming to all skill levels
-
-### Data Privacy
-- **No personal information**: In recordings or datasets
-- **Game account safety**: Don't share credentials
-- **System information**: Only what's needed for compatibility
+### Code Review
+- **Be thorough**: Review code carefully and thoughtfully
+- **Be constructive**: Provide helpful, actionable feedback
+- **Be timely**: Respond to PRs and issues promptly
+- **Be educational**: Explain why changes are suggested
 
 ## 📞 Getting Help
 
-### Before Contributing
-- **Read the README**: Understand the project goals
-- **Try the software**: Run through the full workflow
-- **Check existing issues**: See what's already being worked on
-- **Join discussions**: Comment on relevant issues
+### For Contributors
+- **Check existing issues**: Your question might already be answered
+- **Use the discussion board**: For general questions and ideas
+- **Join the community**: Connect with other contributors
+- **Read the docs**: Check the documentation first
 
-### During Development
-- **Ask questions early**: Better to clarify than assume
-- **Share progress**: Work in progress PRs are welcome
-- **Test thoroughly**: Try different games/hardware if possible
-- **Document changes**: Keep notes on what works/doesn't
-
-### Communication
-- **GitHub issues**: Primary communication channel
-- **Pull request comments**: For code-specific discussions
-- **README updates**: For general project information
-- **Respectful tone**: We're all learning together
+### For Users
+- **Check troubleshooting**: Many issues have documented solutions
+- **Provide details**: Include system info and error messages
+- **Be specific**: Describe exactly what you're trying to do
+- **Be patient**: Community members help in their free time
 
 ---
 
-**Thank you for contributing!** Every contribution, no matter how small, helps make AI more accessible and educational for everyone. 🚀 
+**Thank you for contributing to AI Game Automation!** Your contributions help make this project better for everyone. 🚀 

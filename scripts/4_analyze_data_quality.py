@@ -1,168 +1,185 @@
-# 4_analyze_data_quality.py - Analyze Data Collection Quality
+#!/usr/bin/env python3
+"""
+Data quality analysis script for AI Game Automation
+Analyzes recorded data for training suitability
+"""
+
 import os
-import sys
+
 import numpy as np
-import matplotlib.pyplot as plt
 
-# Import shared configuration
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from config import *
+from config import ACTIONS_FILE, FRAME_DIR
 
-def analyze_data_quality():
-    """Analyze the quality of collected data"""
-    
-    actions_file = ACTIONS_FILE
-    frames_dir = FRAME_DIR
-    
-    if not os.path.exists(actions_file):
-        print("❌ No actions.npy file found!")
-        return False
-    
-    if not os.path.exists(frames_dir):
-        print("❌ No frames directory found!")
-        return False
-    
+
+def load_data():
+    """Load recorded frames and actions."""
+    print("📊 Loading recorded data...")
+
+    # Check if data exists
+    if not os.path.exists(ACTIONS_FILE):
+        print(f"❌ Actions file not found: {ACTIONS_FILE}")
+        return None, None
+
+    if not os.path.exists(FRAME_DIR):
+        print(f"❌ Frames directory not found: {FRAME_DIR}")
+        return None, None
+
     # Load actions
-    actions = np.load(actions_file)
-    print(f"✅ Loaded {len(actions)} action records")
-    
+    actions = np.load(ACTIONS_FILE, allow_pickle=True)
+
     # Count frames
-    frame_files = [f for f in os.listdir(frames_dir) if f.endswith('.jpg')]
-    print(f"✅ Found {len(frame_files)} frame files")
-    
-    # Check data consistency
-    if len(actions) != len(frame_files):
-        print(f"⚠️  WARNING: Mismatch between actions ({len(actions)}) and frames ({len(frame_files)})")
-        print(f"💡 This suggests multiple recording sessions. Using all available data.")
-        
-        # Use the smaller of the two to avoid index errors
-        min_len = min(len(actions), len(frame_files))
-        actions = actions[:min_len]
-        print(f"📊 Using {min_len} frames for analysis")
-    else:
-        print("✅ Actions and frames count match")
-    
-    # Analyze key press data
-    
-    key_actions = actions[:, :len(COMMON_KEYS)]
-    mouse_actions = actions[:, len(COMMON_KEYS):len(COMMON_KEYS)+2]
-    click_actions = actions[:, len(COMMON_KEYS)+2:]
-    
-    print(f"\n📊 DATA ANALYSIS:")
-    print(f"Total frames: {len(actions)}")
-    print(f"Recording duration: {len(actions) / 10:.1f} seconds ({len(actions) / 10 / 60:.1f} minutes)")
-    
-    # Key press analysis
-    total_key_presses = np.sum(key_actions)
-    frames_with_keys = np.sum(np.sum(key_actions, axis=1) > 0)  # Frames where any key was pressed
-    key_press_rate = total_key_presses / (len(actions) * len(COMMON_KEYS))
-    frame_key_rate = frames_with_keys / len(actions)  # Percentage of frames with any key press
-    
-    print(f"\n🔑 KEY PRESS ANALYSIS:")
-    print(f"Total key presses: {total_key_presses}")
-    print(f"Frames with key presses: {frames_with_keys} / {len(actions)} ({frame_key_rate*100:.1f}%)")
-    print(f"Key press rate (all keys): {key_press_rate:.4f} ({key_press_rate*100:.2f}%)")
-    
-    if frame_key_rate < 0.05:  # Less than 5% of frames have key presses
-        print("❌ CRITICAL: Very low key press rate! This will cause training issues.")
-        print("💡 Make sure you're actually pressing keys during recording!")
-        return False
-    elif frame_key_rate < 0.1:  # Less than 10% of frames have key presses
-        print("⚠️  WARNING: Low key press rate. Consider recording more active gameplay.")
-    else:
-        print("✅ Good key press rate detected")
-    
-    # Show most active keys
-    key_totals = np.sum(key_actions, axis=0)
-    active_keys: list[tuple[str, int]] = [(COMMON_KEYS[i], int(total)) for i, total in enumerate(key_totals) if total > 0]
-    active_keys.sort(key=lambda x: x[1], reverse=True)
-    
-    print(f"\n🏆 MOST ACTIVE KEYS:")
-    for i, (key, count) in enumerate(active_keys[:10]):
-        print(f"  {i+1:2d}. {key:8s}: {count:4d} presses")
-    
-    # Mouse analysis
-    print(f"\n🖱️ MOUSE ANALYSIS:")
-    mouse_x_range = (mouse_actions[:, 0].min(), mouse_actions[:, 0].max())
-    mouse_y_range = (mouse_actions[:, 1].min(), mouse_actions[:, 1].max())
-    print(f"Mouse X range: [{mouse_x_range[0]:.3f}, {mouse_x_range[1]:.3f}]")
-    print(f"Mouse Y range: [{mouse_y_range[0]:.3f}, {mouse_y_range[1]:.3f}]")
-    
+    frame_files = [f for f in os.listdir(FRAME_DIR) if f.endswith(".png")]
+    frame_count = len(frame_files)
+
+    print(f"✅ Loaded {len(actions)} actions and {frame_count} frames")
+    return actions, frame_count
+
+
+def analyze_key_presses(actions):
+    """Analyze key press patterns."""
+    print("\n⌨️  Key Press Analysis:")
+
+    # Count key presses
+    key_presses = [a for a in actions if a["type"] == "key_press"]
+    key_releases = [a for a in actions if a["type"] == "key_release"]
+
+    print(f"📊 Total key presses: {len(key_presses)}")
+    print(f"📊 Total key releases: {len(key_releases)}")
+
+    # Key frequency
+    key_counts = {}
+    for action in key_presses:
+        key = action["key"]
+        key_counts[key] = key_counts.get(key, 0) + 1
+
+    print(f"📊 Unique keys pressed: {len(key_counts)}")
+
+    # Show most common keys
+    if key_counts:
+        sorted_keys = sorted(key_counts.items(), key=lambda x: x[1], reverse=True)
+        print("🔝 Most common keys:")
+        for key, count in sorted_keys[:5]:
+            print(f"   {key}: {count} times")
+
+    # Key press rate
+    if len(actions) > 0:
+        key_press_rate = len(key_presses) / len(actions) * 100
+        print(f"📊 Key press rate: {key_press_rate:.1f}%")
+
+        if key_press_rate < 5:
+            print("⚠️  Low key press rate - consider recording more active " "gameplay")
+        elif key_press_rate > 50:
+            print(
+                "⚠️  Very high key press rate - may have too many accidental " "presses"
+            )
+        else:
+            print("✅ Good key press rate")
+
+
+def analyze_mouse_actions(actions):
+    """Analyze mouse action patterns."""
+    print("\n🖱️  Mouse Action Analysis:")
+
+    # Count mouse actions
+    mouse_clicks = [a for a in actions if a["type"] == "mouse_click"]
+    mouse_moves = [a for a in actions if a["type"] == "mouse_move"]
+
+    print(f"📊 Total mouse clicks: {len(mouse_clicks)}")
+    print(f"📊 Total mouse moves: {len(mouse_moves)}")
+
     # Click analysis
-    left_clicks = np.sum(click_actions[:, 0])
-    right_clicks = np.sum(click_actions[:, 1])
-    print(f"Left clicks: {int(left_clicks)}")
-    print(f"Right clicks: {int(right_clicks)}")
-    
-    # Create visualization
-    plt.figure(figsize=(15, 10))
-    
-    # Key press timeline
-    plt.subplot(2, 2, 1)
-    key_activity = np.sum(key_actions, axis=1)
-    plt.plot(key_activity)
-    plt.title('Key Press Activity Over Time')
-    plt.xlabel('Frame')
-    plt.ylabel('Keys Pressed')
-    plt.grid(True)
-    
-    # Mouse movement
-    plt.subplot(2, 2, 2)
-    plt.scatter(mouse_actions[:, 0], mouse_actions[:, 1], alpha=0.5, s=1)
-    plt.title('Mouse Movement Pattern')
-    plt.xlabel('Normalized X')
-    plt.ylabel('Normalized Y')
-    plt.grid(True)
-    
-    # Key press distribution
-    plt.subplot(2, 2, 3)
-    top_keys = active_keys[:15]
-    keys, counts = zip(*top_keys)
-    plt.bar(range(len(keys)), counts)
-    plt.title('Top 15 Most Pressed Keys')
-    plt.xlabel('Key')
-    plt.ylabel('Press Count')
-    plt.xticks(range(len(keys)), keys, rotation=45)
-    
-    # Click timeline
-    plt.subplot(2, 2, 4)
-    plt.plot(click_actions[:, 0], label='Left Click', alpha=0.7)
-    plt.plot(click_actions[:, 1], label='Right Click', alpha=0.7)
-    plt.title('Click Activity Over Time')
-    plt.xlabel('Frame')
-    plt.ylabel('Click State')
-    plt.legend()
-    plt.grid(True)
-    
-    plt.tight_layout()
-    plt.savefig('data_quality_analysis.png', dpi=150, bbox_inches='tight')
-    plt.show()
-    
-    print(f"\n📈 Visualization saved as 'data_quality_analysis.png'")
-    
-    # Recommendations
-    print(f"\n🎯 RECOMMENDATIONS:")
-    if frame_key_rate < 0.1:
-        print("1. Record more active gameplay with frequent key presses")
-        print("2. Try recording shorter sessions (30-60 seconds) with intense gameplay")
-        print("3. Make sure you're pressing different keys, not just one key")
-        print("4. Consider recording a game that requires both keyboard and mouse")
+    if mouse_clicks:
+        left_clicks = [c for c in mouse_clicks if "left" in str(c["button"])]
+        right_clicks = [c for c in mouse_clicks if "right" in str(c["button"])]
+
+        print(f"📊 Left clicks: {len(left_clicks)}")
+        print(f"📊 Right clicks: {len(right_clicks)}")
+
+    # Mouse movement coverage
+    if mouse_moves:
+        x_coords = [m["x"] for m in mouse_moves]
+        y_coords = [m["y"] for m in mouse_moves]
+
+        x_range = max(x_coords) - min(x_coords)
+        y_range = max(y_coords) - min(y_coords)
+
+        print(f"📊 Mouse X range: {x_range:.0f} pixels")
+        print(f"📊 Mouse Y range: {y_range:.0f} pixels")
+
+
+def analyze_data_quality(actions, frame_count):
+    """Overall data quality assessment."""
+    print("\n📈 Data Quality Assessment:")
+
+    # Action density
+    if frame_count > 0:
+        actions_per_frame = len(actions) / frame_count
+        print(f"📊 Actions per frame: {actions_per_frame:.2f}")
+
+        if actions_per_frame < 0.1:
+            print("⚠️  Very low action density - consider more active gameplay")
+        elif actions_per_frame > 10:
+            print("⚠️  Very high action density - may be too noisy")
+        else:
+            print("✅ Good action density")
+
+    # Data balance
+    key_actions = [a for a in actions if "key" in a["type"]]
+    mouse_actions = [a for a in actions if "mouse" in a["type"]]
+
+    total_actions = len(actions)
+    if total_actions > 0:
+        key_ratio = len(key_actions) / total_actions
+        mouse_ratio = len(mouse_actions) / total_actions
+
+        print(f"📊 Key actions: {key_ratio:.1%}")
+        print(f"📊 Mouse actions: {mouse_ratio:.1%}")
+
+        if key_ratio < 0.1:
+            print("⚠️  Very few key actions - may not learn keyboard controls well")
+        elif mouse_ratio < 0.1:
+            print("⚠️  Very few mouse actions - may not learn mouse controls well")
+        else:
+            print("✅ Good balance of key and mouse actions")
+
+    # Overall assessment
+    print("\n🎯 Overall Assessment:")
+    if len(actions) < 100:
+        print("❌ Very little data - record at least 2-3 minutes of gameplay")
+    elif len(actions) < 500:
+        print("⚠️  Limited data - consider recording more gameplay")
     else:
-        print("1. Data quality looks good for training!")
-        print("2. Consider recording multiple sessions for better variety")
-        print("3. Make sure to include mouse movements and clicks")
-    
-    return True
+        print("✅ Sufficient data for training")
+
+    if frame_count < 100:
+        print("❌ Very few frames - record longer gameplay sessions")
+    elif frame_count < 500:
+        print("⚠️  Limited frames - consider longer recording sessions")
+    else:
+        print("✅ Sufficient frames for training")
+
+
+def main():
+    """Main analysis function."""
+    print("📊 AI Game Automation - Data Quality Analysis")
+    print("=" * 50)
+
+    # Load data
+    actions, frame_count = load_data()
+    if actions is None:
+        print("\n❌ No data found. Please record some gameplay first:")
+        print("   python scripts/3_record_data.py")
+        return
+
+    # Analyze data
+    analyze_key_presses(actions)
+    analyze_mouse_actions(actions)
+    analyze_data_quality(actions, frame_count)
+
+    print("\n✅ Analysis complete!")
+    print("🎉 If data looks good, proceed to training:")
+    print("   python scripts/5_train_model.py")
+
 
 if __name__ == "__main__":
-    print("🔍 Testing Data Collection Quality...")
-    print("=" * 50)
-    
-    success = analyze_data_quality()
-    
-    if success:
-        print("\n✅ Data collection test completed successfully!")
-        print("💡 You can now proceed with training using 5_train_model.py")
-    else:
-        print("\n❌ Data collection issues detected!")
-        print("💡 Please fix the issues and record new data before training")
+    main()

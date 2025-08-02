@@ -1,103 +1,106 @@
 #!/usr/bin/env python3
 """
-Quick test script to verify the AI game automation pipeline works on AMD systems.
+System verification script for AI Game Automation
+Verifies configuration and system compatibility
 """
 
-import torch
-import numpy as np
-import cv2
-import mss
+import os
 import sys
-sys.path.append('.')
-import importlib.util
-spec = importlib.util.spec_from_file_location("train_model", "5_train_model.py")
-train_model = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(train_model)
-ImprovedBehaviorCloningCNNRNN = train_model.ImprovedBehaviorCloningCNNRNN
 
-def verify_system_setup():
-    print("🧪 Testing AI Game Automation Pipeline")
+from config import (
+    BATCH_SIZE,
+    COMMON_KEYS,
+    DATA_DIR,
+    FRAME_DIR,
+    IMG_HEIGHT,
+    IMG_WIDTH,
+    SEQUENCE_LENGTH,
+    TRAIN_IMG_HEIGHT,
+    TRAIN_IMG_WIDTH,
+    validate_config,
+)
+
+
+def check_directories():
+    """Check and create required directories."""
+    print("📁 Checking directories...")
+
+    directories = [DATA_DIR, FRAME_DIR]
+    for directory in directories:
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+            print(f"✅ Created: {directory}")
+        else:
+            print(f"✅ Exists: {directory}")
+
+
+def check_configuration():
+    """Check configuration settings."""
+    print("\n⚙️  Checking configuration...")
+
+    # Check image dimensions
+    print(f"📐 Recording dimensions: {IMG_WIDTH}x{IMG_HEIGHT}")
+    print(f"📐 Training dimensions: {TRAIN_IMG_WIDTH}x{TRAIN_IMG_HEIGHT}")
+
+    # Check key configuration
+    print(f"⌨️  Keys configured: {len(COMMON_KEYS)} keys")
+    if len(COMMON_KEYS) < 5:
+        print("⚠️  Warning: Very few keys configured")
+
+    # Check training parameters
+    print(f"🧠 Batch size: {BATCH_SIZE}")
+    print(f"🧠 Sequence length: {SEQUENCE_LENGTH}")
+
+    # Validate configuration
+    try:
+        validate_config()
+        return True
+    except AssertionError as e:
+        print(f"❌ Configuration error: {e}")
+        return False
+
+
+def check_memory_requirements():
+    """Estimate memory requirements."""
+    print("\n💾 Memory requirements:")
+
+    # Calculate approximate memory usage
+    frame_size = TRAIN_IMG_WIDTH * TRAIN_IMG_HEIGHT * 3  # RGB
+    sequence_size = frame_size * SEQUENCE_LENGTH
+    batch_size = sequence_size * BATCH_SIZE
+
+    # Convert to MB
+    batch_mb = batch_size / (1024 * 1024)
+
+    print(f"📊 Estimated batch memory: {batch_mb:.1f} MB")
+
+    if batch_mb > 1000:
+        print("⚠️  High memory usage - consider reducing batch size")
+    elif batch_mb < 50:
+        print("✅ Low memory usage")
+    else:
+        print("✅ Reasonable memory usage")
+
+
+def main():
+    """Main verification function."""
+    print("🔍 AI Game Automation - System Verification")
     print("=" * 50)
-    
-    # Test 1: PyTorch setup
-    print("1. Testing PyTorch setup...")
-    print(f"   PyTorch version: {torch.__version__}")
-    print(f"   CUDA available: {torch.cuda.is_available()}")
-    print(f"   Device: {torch.device('cuda' if torch.cuda.is_available() else 'cpu')}")
-    print("   ✅ PyTorch setup OK")
-    
-    # Test 2: Model creation
-    print("\n2. Testing model creation...")
-    try:
-        model = ImprovedBehaviorCloningCNNRNN(output_dim=9)
-        print(f"   Model parameters: {sum(p.numel() for p in model.parameters()):,}")
-        print("   ✅ Model creation OK")
-    except Exception as e:
-        print(f"   ❌ Model creation failed: {e}")
-        return False
-    
-    # Test 3: Model forward pass
-    print("\n3. Testing model forward pass...")
-    try:
-        # Create dummy input (batch_size=1, sequence_length=5, channels=3, height=960, width=540)
-        dummy_input = torch.randn(1, 5, 3, 960, 540)
-        with torch.no_grad():
-            output = model(dummy_input)
-        print(f"   Input shape: {dummy_input.shape}")
-        print(f"   Output shape: {output.shape}")
-        print("   ✅ Forward pass OK")
-    except Exception as e:
-        print(f"   ❌ Forward pass failed: {e}")
-        return False
-    
-    # Test 4: Screen capture
-    print("\n4. Testing screen capture...")
-    try:
-        sct = mss.mss()
-        monitor = sct.monitors[1]  # Primary monitor
-        screenshot = sct.grab(monitor)
-        img = np.array(screenshot)
-        print(f"   Screen resolution: {img.shape}")
-        print("   ✅ Screen capture OK")
-    except Exception as e:
-        print(f"   ❌ Screen capture failed: {e}")
-        return False
-    
-    # Test 5: Image processing
-    print("\n5. Testing image processing...")
-    try:
-        # Resize and normalize
-        img_resized = cv2.resize(img, (960, 540))
-        img_normalized = img_resized.astype(np.float32) / 255.0
-        print(f"   Resized shape: {img_resized.shape}")
-        print(f"   Normalized range: [{img_normalized.min():.3f}, {img_normalized.max():.3f}]")
-        print("   ✅ Image processing OK")
-    except Exception as e:
-        print(f"   ❌ Image processing failed: {e}")
-        return False
-    
-    # Test 6: Memory usage
-    print("\n6. Testing memory usage...")
-    try:
-        # Create a larger batch to test memory
-        large_batch = torch.randn(4, 5, 3, 960, 540)
-        with torch.no_grad():
-            large_output = model(large_batch)
-        print(f"   Large batch shape: {large_batch.shape}")
-        print(f"   Large output shape: {large_output.shape}")
-        print("   ✅ Memory test OK")
-    except Exception as e:
-        print(f"   ❌ Memory test failed: {e}")
-        return False
-    
-    print("\n" + "=" * 50)
-    print("🎉 All tests passed! Your AMD system is ready for AI game automation.")
-    print("\n📋 Next steps:")
-    print("1. Record some gameplay: python 3_record_data.py")
-    print("2. Train the model: python 5_train_model.py")
-    print("3. Run inference: python 6_run_inference.py")
-    
-    return True
+
+    # Check directories
+    check_directories()
+
+    # Check configuration
+    if not check_configuration():
+        print("\n❌ Configuration verification failed!")
+        sys.exit(1)
+
+    # Check memory requirements
+    check_memory_requirements()
+
+    print("\n✅ System verification complete!")
+    print("🎉 Ready to start recording and training!")
+
 
 if __name__ == "__main__":
-    verify_system_setup()
+    main()

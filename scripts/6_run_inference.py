@@ -1,386 +1,270 @@
-# 6_run_inference.py - Improved Inference with DirectML Support
-import os
-import sys
-import torch
-import torch.nn as nn
-import numpy as np
-import cv2
-import mss
+#!/usr/bin/env python3
+"""
+Inference script for AI Game Automation
+Runs trained model to control games automatically
+"""
+
 import time
 from collections import deque
-from pynput.keyboard import Controller as KeyboardController, Key
-from pynput.mouse import Controller as MouseController, Button
-from pynput import keyboard
+
+import cv2
+import mss
+import numpy as np
+import torch
+import torch.nn as nn
+from pynput import keyboard, mouse
 from torchvision import transforms
 
-# Import shared configuration
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from config import *
+from config import (
+    CLICK_THRESHOLD,
+    COMMON_KEYS,
+    IMG_HEIGHT,
+    IMG_WIDTH,
+    INFERENCE_FPS,
+    KEY_MAPPING,
+    KEY_THRESHOLD,
+    MODEL_FILE,
+    MOUSE_SMOOTHING_ALPHA,
+    SEQUENCE_LENGTH,
+    SMOOTH_FACTOR,
+)
 
-# === SCREEN CONFIG ===
-with mss.mss() as sct: 
-    monitor = sct.monitors[1]
-SCREEN_WIDTH, SCREEN_HEIGHT = monitor["width"], monitor["height"]
-
-KEY_MAPPING = {
-    'space': Key.space, 'shift': Key.shift, 'ctrl': Key.ctrl, 'alt': Key.alt, 'tab': Key.tab,
-    'enter': Key.enter, 'backspace': Key.backspace, 'up': Key.up, 'down': Key.down,
-    'left': Key.left, 'right': Key.right, 'f1': Key.f1, 'f3': Key.f3, 'f4': Key.f4,
-    'f5': Key.f5, 'f6': Key.f6, 'f7': Key.f7, 'f8': Key.f8, 'f9': Key.f9,
-    'f10': Key.f10, 'f11': Key.f11, 'f12': Key.f12
-}
-
-for k in COMMON_KEYS:
-    if len(k) == 1: 
-        KEY_MAPPING[k] = k
 
 class ImprovedBehaviorCloningCNNRNN(nn.Module):
+    """Improved neural network for behavior cloning."""
+
     def __init__(self, output_dim):
         super().__init__()
-        
-        # Match improved training architecture exactly (DirectML compatible)
+
+        # CNN for feature extraction
         self.cnn = nn.Sequential(
-            nn.Conv2d(3, 32, 5, stride=2, padding=2), nn.BatchNorm2d(32), nn.ReLU(),
-            nn.Conv2d(32, 64, 3, stride=2, padding=1), nn.BatchNorm2d(64), nn.ReLU(),
-            nn.Conv2d(64, 128, 3, stride=2, padding=1), nn.BatchNorm2d(128), nn.ReLU(),
+            nn.Conv2d(3, 32, 5, stride=2, padding=2),
+            nn.BatchNorm2d(32),
+            nn.ReLU(),
+            nn.Conv2d(32, 64, 3, stride=2, padding=1),
+            nn.BatchNorm2d(64),
+            nn.ReLU(),
+            nn.Conv2d(64, 128, 3, stride=2, padding=1),
+            nn.BatchNorm2d(128),
+            nn.ReLU(),
             nn.AdaptiveAvgPool2d((6, 6)),
-            nn.Flatten()
+            nn.Flatten(),
         )
-        
+
+        # Calculate CNN output size
         with torch.no_grad():
             dummy_input = torch.zeros(1, 3, IMG_HEIGHT, IMG_WIDTH)
             cnn_output_size = self.cnn(dummy_input).shape[1]
-        
-        # DirectML-compatible temporal layers (replaces LSTM)
-        self.temporal_layers = nn.Sequential(
-            nn.Linear(cnn_output_size, 512), nn.ReLU(), nn.Dropout(0.1),
-            nn.Linear(512, 256), nn.ReLU(), nn.Dropout(0.1),
-            nn.Linear(256, 256)
+
+        # LSTM for temporal modeling
+        self.lstm = nn.LSTM(
+            input_size=cnn_output_size,
+            hidden_size=256,
+            num_layers=2,
+            batch_first=True,
+            dropout=0.1,
         )
-        
-        # Separate heads for different outputs
+
+        # Output heads
         self.key_head = nn.Sequential(
             nn.Linear(256, 128),
             nn.ReLU(),
             nn.Dropout(0.2),
             nn.Linear(128, len(COMMON_KEYS)),
-            nn.Sigmoid()
+            nn.Sigmoid(),
         )
-        
-        self.mouse_pos_head = nn.Sequential(
-            nn.Linear(256, 64),
-            nn.ReLU(),
-            nn.Linear(64, 2),
-            nn.Sigmoid()
-        )
-        
-        self.mouse_click_head = nn.Sequential(
-            nn.Linear(256, 32),
-            nn.ReLU(),
-            nn.Linear(32, 2),
-            nn.Sigmoid()
-        )
-    
-    def forward(self, x):
-        b, s, c, h, w = x.shape
-        
-        # Process through CNN
-        cnn_out = self.cnn(x.view(b * s, c, h, w))
-        
-        # Process through temporal layers (DirectML compatible)
-        temporal_in = cnn_out.view(b, s, -1)
-        temporal_out = self.temporal_layers(temporal_in.view(b * s, -1))
-        temporal_out = temporal_out.view(b, s, -1)
-        
-        # Take last timestep for prediction
-        final_features = temporal_out[:, -1, :]
-        
-        # Generate outputs
-        key_out = self.key_head(final_features)
-        mouse_pos_out = self.mouse_pos_head(final_features)
-        mouse_click_out = self.mouse_click_head(final_features)
-        
-        # Combine and expand to sequence length
-        combined = torch.cat([key_out, mouse_pos_out, mouse_click_out], dim=1)
-        return combined.unsqueeze(1).expand(b, s, -1)
 
-# === Load Model and Controllers ===
+        self.mouse_pos_head = nn.Sequential(
+            nn.Linear(256, 64), nn.ReLU(), nn.Linear(64, 2), nn.Sigmoid()
+        )
+
+        self.mouse_click_head = nn.Sequential(
+            nn.Linear(256, 32), nn.ReLU(), nn.Linear(32, 2), nn.Sigmoid()
+        )
+
+    def forward(self, x):
+        batch_size, seq_len, channels, height, width = x.shape
+
+        # Process through CNN
+        cnn_out = self.cnn(x.view(batch_size * seq_len, channels, height, width))
+        lstm_in = cnn_out.view(batch_size, seq_len, -1)
+
+        # Process through LSTM
+        lstm_out, _ = self.lstm(lstm_in)
+        lstm_flat = lstm_out.reshape(batch_size * seq_len, -1)
+
+        # Generate outputs
+        key_out = self.key_head(lstm_flat)
+        mouse_pos_out = self.mouse_pos_head(lstm_flat)
+        mouse_click_out = self.mouse_click_head(lstm_flat)
+
+        # Combine outputs
+        combined = torch.cat([key_out, mouse_pos_out, mouse_click_out], dim=1)
+        return combined.view(batch_size, seq_len, -1)
+
+
+# Initialize model
 output_dim = len(COMMON_KEYS) + 4
 model = ImprovedBehaviorCloningCNNRNN(output_dim)
 
+# Load trained model
 try:
-    # Smart device selection: DirectML -> ROCm/CUDA -> CPU
-    device = None
-    device_name = "Unknown"
-
-    # Try DirectML first (best for AMD GPUs on Windows)
-    try:
-        import torch_directml
-        device = torch_directml.device()
-        device_name = "DirectML (AMD GPU acceleration)"
-        print("🚀 Using DirectML for inference acceleration!")
-    except ImportError:
-        pass
-
-    # Fallback to ROCm/CUDA
-    if device is None:
-        if torch.cuda.is_available():
-            device = torch.device("cuda")
-            device_name = f"CUDA (GPU: {torch.cuda.get_device_name()})"
-            print("⚡ Using CUDA for inference acceleration!")
-        else:
-            # Check for ROCm (AMD's CUDA alternative)
-            try:
-                if hasattr(torch.version, 'hip') and torch.version.hip is not None:
-                    device = torch.device("cuda")  # ROCm uses cuda device interface
-                    device_name = "ROCm (AMD GPU acceleration)"
-                    print("🔥 Using ROCm for inference acceleration!")
-            except:
-                pass
-
-    # Final fallback to CPU
-    if device is None:
-        device = torch.device("cpu")
-        device_name = "CPU (no GPU acceleration)"
-        print("💻 Using CPU for inference (consider installing DirectML for GPU acceleration)")
-
-    print(f"Loading model on {device_name}...")
-
-    # Load model with proper device mapping
-    model.load_state_dict(torch.load(MODEL_PATH, map_location=device))
-    model.to(device)
-    print("✅ Improved model loaded successfully")
-except Exception as e:
-    print(f"❌ Error loading model: {e}")
-    print("💡 Make sure to train with 3_train_improved_model.py first")
+    model.load_state_dict(torch.load(MODEL_FILE, map_location="cpu"))
+    model.eval()
+    print(f"✅ Model loaded from {MODEL_FILE}")
+except FileNotFoundError:
+    print(f"❌ Model file not found: {MODEL_FILE}")
+    print("Please train a model first: python scripts/5_train_model.py")
     exit(1)
 
-model.eval()
+# Initialize controllers
+keyboard_controller = keyboard.Controller()
+mouse_controller = mouse.Controller()
 
-keyboard_controller = KeyboardController()
-mouse_controller = MouseController()
-running = True
+# Screen capture setup
+sct = mss.mss()
+monitor = sct.monitors[1]  # Primary monitor
+SCREEN_WIDTH = monitor["width"]
+SCREEN_HEIGHT = monitor["height"]
 
-# State tracking
+# Image preprocessing
+transform = transforms.Compose(
+    [
+        transforms.ToPILImage(),
+        transforms.Resize((IMG_HEIGHT, IMG_WIDTH)),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+    ]
+)
+
+# Global state
 frame_sequence = deque(maxlen=SEQUENCE_LENGTH)
 current_pressed_keys = set()
 current_mouse_buttons = set()
-target_mouse_pos = (SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2)
-
-# Temporal smoothing variables for mouse movement
 prev_mouse_pos = None
 
-# Improved transforms to match training
-transform = transforms.Compose([
-    transforms.ToPILImage(),
-    transforms.Resize((IMG_HEIGHT, IMG_WIDTH)),
-    transforms.ToTensor(),
-    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-])
-
-def on_key_press(key):
-    global running
-    if key == keyboard.Key.f2: 
-        running = False
 
 def apply_output(output):
-    global target_mouse_pos, prev_mouse_pos
-    
+    """Apply model output to keyboard and mouse."""
+    global prev_mouse_pos
+
     raw_output = output.detach().cpu().numpy()
-    
-    # Extract predictions
-    key_preds = raw_output[:len(COMMON_KEYS)]
+
+    key_preds = raw_output[: len(COMMON_KEYS)]
     mouse_x = raw_output[len(COMMON_KEYS)] * SCREEN_WIDTH
     mouse_y = raw_output[len(COMMON_KEYS) + 1] * SCREEN_HEIGHT
     left_click = raw_output[len(COMMON_KEYS) + 2] > CLICK_THRESHOLD
     right_click = raw_output[len(COMMON_KEYS) + 3] > CLICK_THRESHOLD
-    
-    # Apply temporal smoothing (Exponential Moving Average)
-    current_mouse_pred = (mouse_x, mouse_y)
-    
-    if prev_mouse_pos is None:
-        smoothed_mouse_pos = current_mouse_pred
-    else:
-        # EMA: smoothed = alpha * current + (1 - alpha) * previous
-        smoothed_mouse_pos = (
-            MOUSE_SMOOTHING_ALPHA * current_mouse_pred[0] + (1 - MOUSE_SMOOTHING_ALPHA) * prev_mouse_pos[0],
-            MOUSE_SMOOTHING_ALPHA * current_mouse_pred[1] + (1 - MOUSE_SMOOTHING_ALPHA) * prev_mouse_pos[1]
-        )
-    
-    prev_mouse_pos = smoothed_mouse_pos
-    target_mouse_pos = smoothed_mouse_pos
-    
-    # Handle key presses with much lower threshold
-    active_keys = []
-    for i, key_str in enumerate(COMMON_KEYS):
-        pynput_key = KEY_MAPPING.get(key_str)
-        if not pynput_key: 
-            continue
-            
-        confidence = key_preds[i]
-        is_pressed = confidence > KEY_THRESHOLD
-        
-        if is_pressed and key_str not in current_pressed_keys:
-            print(f"🔑 AI PRESS: Key '{key_str}' (Confidence: {confidence:.3f})")
-            try:
-                keyboard_controller.press(pynput_key)
-                current_pressed_keys.add(key_str)
-                active_keys.append(key_str)
-            except Exception as e:
-                print(f"Error pressing key {key_str}: {e}")
-                
-        elif not is_pressed and key_str in current_pressed_keys:
-            try:
-                keyboard_controller.release(pynput_key)
-                current_pressed_keys.remove(key_str)
-            except Exception as e:
-                print(f"Error releasing key {key_str}: {e}")
-    
-    # Handle mouse clicks
-    if left_click and Button.left not in current_mouse_buttons:
-        print(f"🖱️ AI LEFT CLICK (Confidence: {raw_output[len(COMMON_KEYS) + 2]:.3f})")
-        try:
-            mouse_controller.press(Button.left)
-            current_mouse_buttons.add(Button.left)
-        except Exception as e:
-            print(f"Error with left click: {e}")
-            
-    elif not left_click and Button.left in current_mouse_buttons:
-        try:
-            mouse_controller.release(Button.left)
-            current_mouse_buttons.remove(Button.left)
-        except Exception as e:
-            print(f"Error releasing left click: {e}")
-    
-    if right_click and Button.right not in current_mouse_buttons:
-        print(f"🖱️ AI RIGHT CLICK (Confidence: {raw_output[len(COMMON_KEYS) + 3]:.3f})")
-        try:
-            mouse_controller.press(Button.right)
-            current_mouse_buttons.add(Button.right)
-        except Exception as e:
-            print(f"Error with right click: {e}")
-            
-    elif not right_click and Button.right in current_mouse_buttons:
-        try:
-            mouse_controller.release(Button.right)
-            current_mouse_buttons.remove(Button.right)
-        except Exception as e:
-            print(f"Error releasing right click: {e}")
 
-def smooth_mouse_movement():
-    """Apply smooth mouse movement towards target position"""
-    try:
-        current_pos = mouse_controller.position
-        
-        # Calculate smooth movement
-        diff_x = target_mouse_pos[0] - current_pos[0]
-        diff_y = target_mouse_pos[1] - current_pos[1]
-        
-        # Only move if difference is significant
-        if abs(diff_x) > 3 or abs(diff_y) > 3:
-            new_x = int(current_pos[0] + diff_x * SMOOTH_FACTOR)
-            new_y = int(current_pos[1] + diff_y * SMOOTH_FACTOR)
-            
-            # Clamp to screen bounds
-            new_x = max(0, min(SCREEN_WIDTH - 1, new_x))
-            new_y = max(0, min(SCREEN_HEIGHT - 1, new_y))
-            
-            mouse_controller.position = (new_x, new_y)
-            
-    except Exception as e:
-        print(f"Error moving mouse: {e}")
+    # Apply key presses
+    for _, (key, pred) in enumerate(zip(COMMON_KEYS, key_preds)):
+        if pred > KEY_THRESHOLD:
+            if key not in current_pressed_keys:
+                current_pressed_keys.add(key)
+                if key in KEY_MAPPING:
+                    keyboard_controller.press(KEY_MAPPING[key])
+        else:
+            if key in current_pressed_keys:
+                current_pressed_keys.discard(key)
+                if key in KEY_MAPPING:
+                    keyboard_controller.release(KEY_MAPPING[key])
+
+    # Apply mouse movement with smoothing
+    if prev_mouse_pos is None:
+        prev_mouse_pos = (mouse_x, mouse_y)
+
+    smooth_x = prev_mouse_pos[0] * SMOOTH_FACTOR + mouse_x * (1 - SMOOTH_FACTOR)
+    smooth_y = prev_mouse_pos[1] * SMOOTH_FACTOR + mouse_y * (1 - SMOOTH_FACTOR)
+
+    mouse_controller.position = (int(smooth_x), int(smooth_y))
+    prev_mouse_pos = (smooth_x, smooth_y)
+
+    # Apply mouse clicks
+    if left_click:
+        mouse_controller.press(mouse.Button.left)
+    else:
+        mouse_controller.release(mouse.Button.left)
+
+    if right_click:
+        mouse_controller.press(mouse.Button.right)
+    else:
+        mouse_controller.release(mouse.Button.right)
+
+
+def smooth_mouse_movement(target_mouse_pos):
+    """Smooth mouse movement to target position."""
+    current_pos = mouse_controller.position
+    new_x = current_pos[0] * MOUSE_SMOOTHING_ALPHA + target_mouse_pos[0] * (
+        1 - MOUSE_SMOOTHING_ALPHA
+    )
+    new_y = current_pos[1] * MOUSE_SMOOTHING_ALPHA + target_mouse_pos[1] * (
+        1 - MOUSE_SMOOTHING_ALPHA
+    )
+    mouse_controller.position = (int(new_x), int(new_y))
+
 
 def capture_and_process_frame():
-    """Capture and preprocess a frame"""
-    try:
-        with mss.mss() as sct:
-            monitor = sct.monitors[1]
-            img = cv2.cvtColor(np.array(sct.grab(monitor)), cv2.COLOR_BGRA2RGB)
-            return transform(img)
-    except Exception as e:
-        print(f"Error capturing frame: {e}")
-        return torch.zeros(3, IMG_HEIGHT, IMG_WIDTH)
+    """Capture and preprocess a screen frame."""
+    screenshot = sct.grab(monitor)
+    img = np.array(screenshot)
+    img = cv2.cvtColor(img, cv2.COLOR_BGRA2RGB)
+    img_tensor = transform(img)
+    return img_tensor
 
-# === Main Loop ===
-listener = keyboard.Listener(on_press=on_key_press)
-listener.start()
 
-print("🟢 Starting IMPROVED AI inference in 3 seconds... Press [F2] to quit.")
-print(f"🔧 Using thresholds: Key={KEY_THRESHOLD}, Click={CLICK_THRESHOLD}")
-time.sleep(3)
+def main():
+    """Main inference function."""
+    print("🤖 AI Game Automation - Inference")
+    print("=" * 40)
+    print("Press Ctrl+C to stop")
 
-# Initialize frame sequence
-print("📸 Initializing frame sequence...")
-for i in range(SEQUENCE_LENGTH):
-    frame = capture_and_process_frame()
-    frame_sequence.append(frame)
-    print(f"  Frame {i+1}/{SEQUENCE_LENGTH} captured")
-    time.sleep(0.1)
+    # Initialize frame sequence
+    for _ in range(SEQUENCE_LENGTH):
+        frame_sequence.append(capture_and_process_frame())
+        time.sleep(0.1)
 
-print("🤖 IMPROVED AI is now active!")
-
-try:
     frame_interval = 1.0 / INFERENCE_FPS
     last_inference_time = time.time()
-    frame_count = 0
-    
-    while running:
-        current_time = time.time()
-        
-        # Run inference at consistent intervals
-        if current_time - last_inference_time >= frame_interval:
-            # Capture new frame
-            frame = capture_and_process_frame()
-            frame_sequence.append(frame)
-            
-            # Prepare input tensor and move to device
-            input_tensor = torch.stack(list(frame_sequence)).unsqueeze(0).to(device)
-            
-            # Run inference
-            with torch.no_grad():
-                output_sequence = model(input_tensor)
-                # Use the last timestep's output
-                last_output = output_sequence[:, -1, :].squeeze()
-            
-            # Apply the predicted actions
-            apply_output(last_output)
-            
-            frame_count += 1
-            if frame_count % 50 == 0:  # Print status every 5 seconds
-                print(f"🔄 Processed {frame_count} frames...")
-            
-            last_inference_time = current_time
-        
-        # Always apply smooth mouse movement
-        smooth_mouse_movement()
-        
-        # Small sleep to prevent excessive CPU usage
-        time.sleep(0.005)
 
-except KeyboardInterrupt:
-    print("\n🛑 Interrupted by user")
-except Exception as e:
-    print(f"❌ Error during inference: {e}")
-    import traceback
-    traceback.print_exc()
+    try:
+        while True:
+            current_time = time.time()
 
-finally:
-    # Cleanup: Release all pressed keys and buttons
-    print("🧹 Cleaning up...")
-    
-    for key_str in list(current_pressed_keys):
-        pynput_key = KEY_MAPPING.get(key_str)
-        if pynput_key:
-            try:
-                keyboard_controller.release(pynput_key)
-            except:
-                pass
-    
-    for button in list(current_mouse_buttons):
-        try:
-            mouse_controller.release(button)
-        except:
-            pass
-    
-    listener.stop()
-    print("✅ Improved inference stopped cleanly.")
+            if current_time - last_inference_time >= frame_interval:
+                # Capture new frame
+                new_frame = capture_and_process_frame()
+                frame_sequence.append(new_frame)
+
+                # Prepare input for model
+                input_sequence = torch.stack(list(frame_sequence)).unsqueeze(0)
+
+                # Run inference
+                with torch.no_grad():
+                    output = model(input_sequence)
+                    # Use the last prediction in the sequence
+                    last_output = output[0, -1, :]
+
+                # Apply output
+                apply_output(last_output)
+
+                last_inference_time = current_time
+
+            time.sleep(0.01)  # Small delay to prevent excessive CPU usage
+
+    except KeyboardInterrupt:
+        print("\n⏹️  Stopping inference...")
+
+        # Release all keys
+        for key in current_pressed_keys:
+            if key in KEY_MAPPING:
+                keyboard_controller.release(KEY_MAPPING[key])
+
+        # Release all mouse buttons
+        mouse_controller.release(mouse.Button.left)
+        mouse_controller.release(mouse.Button.right)
+
+        print("✅ Cleanup complete")
+
+
+if __name__ == "__main__":
+    main()

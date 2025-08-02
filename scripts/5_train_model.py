@@ -1,447 +1,326 @@
-# 5_train_model.py - Improved Behavior Cloning with DirectML Support
+#!/usr/bin/env python3
+"""
+Training script for AI Game Automation
+Trains neural network on recorded gameplay data
+"""
+
 import os
-import sys
-import numpy as np
+
 import cv2
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import Dataset, DataLoader, ConcatDataset
-from torchvision import transforms
-import matplotlib.pyplot as plt
+from sklearn.metrics import precision_recall_fscore_support
+from torch.utils.data import DataLoader, Dataset, random_split
 
-# Import shared configuration
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-try:
-    from config import *
-    # Validate configuration consistency
-    validate_config()
-    print("✅ Configuration loaded and validated successfully")
-except ImportError as e:
-    print(f"❌ Error importing config: {e}")
-    print("💡 Make sure config.py exists in the project root directory")
-    exit(1)
-except Exception as e:
-    print(f"⚠️ Configuration validation warning: {e}")
-    print("🔄 Continuing with default values...")
+from config import (
+    ACTIONS_FILE,
+    BATCH_SIZE,
+    COMMON_KEYS,
+    EPOCHS,
+    FRAME_DIR,
+    LEARNING_RATE,
+    MODEL_FILE,
+    OVERSAMPLE_ACTION_FRAMES_MULTIPLIER,
+    SEQUENCE_LENGTH,
+    TRAIN_IMG_HEIGHT,
+    TRAIN_IMG_WIDTH,
+    VALIDATION_SPLIT,
+)
 
-# Use training-specific dimensions from config
-try:
-    IMG_HEIGHT = TRAIN_IMG_HEIGHT
-    IMG_WIDTH = TRAIN_IMG_WIDTH
-    print(f"📐 Using training dimensions: {IMG_WIDTH}x{IMG_HEIGHT}")
-except NameError:
-    print("⚠️ Training dimensions not found in config, using defaults")
-    IMG_HEIGHT = 224
-    IMG_WIDTH = 224
-
-SEQUENCE_LENGTH = 3  # Reduced sequence length for memory efficiency
-
-# Validate required config variables
-required_vars = ['COMMON_KEYS', 'BATCH_SIZE', 'EPOCHS', 'LEARNING_RATE', 'DATA_DIR', 'FRAME_DIR', 'ACTIONS_FILE', 'MODEL_PATH']
-missing_vars = [var for var in required_vars if var not in globals()]
-if missing_vars:
-    print(f"❌ Missing required config variables: {missing_vars}")
-    exit(1)
 
 class WoWSequenceDataset(Dataset):
-    def __init__(self, frame_dir, actions_file, sequence_length, transform=None):
-        self.frame_paths = sorted([os.path.join(frame_dir, f) for f in os.listdir(frame_dir) if f.endswith(".jpg")])
-        self.actions = np.load(actions_file).astype(np.float32)
-        
-        # Ensure we have matching data
-        min_len = min(len(self.frame_paths), len(self.actions))
-        self.frame_paths = self.frame_paths[:min_len]
-        self.actions = self.actions[:min_len]
-        
-        self.transform = transform
+    """Dataset for training with oversampling of action frames."""
+
+    def __init__(self, frame_dir, actions_file, sequence_length=5):
+        self.frame_dir = frame_dir
+        self.actions = np.load(actions_file, allow_pickle=True)
         self.sequence_length = sequence_length
-        
-        print(f"Dataset: {len(self.frame_paths)} frames, {len(self.actions)} actions")
-        
-        # Analyze the data
-        key_actions = self.actions[:, :len(COMMON_KEYS)]
-        key_totals = np.sum(key_actions, axis=0)
-        active_keys = [(COMMON_KEYS[i], int(total)) for i, total in enumerate(key_totals) if total > 0]
-        print(f"Active keys in data: {active_keys}")
-        
-        # Check for class imbalance
-        total_key_presses = np.sum(key_actions)
-        total_frames = len(self.actions)
-        print(f"Key press rate: {total_key_presses / (total_frames * len(COMMON_KEYS)):.4f}")
-        
-        if total_key_presses / (total_frames * len(COMMON_KEYS)) < 0.01:
-            print("⚠️  WARNING: Very low key press rate! This will cause training issues.")
-    
+
+        # Find frames with actions for oversampling
+        action_frames = set()
+        for action in self.actions:
+            if action["type"] in ["key_press", "mouse_click"]:
+                action_frames.add(action["frame"])
+
+        # Create oversampled dataset
+        self.oversampled_indices = []
+        frame_files = sorted([f for f in os.listdir(frame_dir) if f.endswith(".png")])
+
+        for i in range(len(frame_files) - sequence_length + 1):
+            # Check if this sequence contains action frames
+            sequence_frames = set(range(i, i + sequence_length))
+            has_actions = bool(sequence_frames & action_frames)
+
+            if has_actions:
+                # Oversample action sequences
+                for _ in range(OVERSAMPLE_ACTION_FRAMES_MULTIPLIER):
+                    self.oversampled_indices.append(i)
+            else:
+                # Normal sampling for non-action sequences
+                self.oversampled_indices.append(i)
+
     def __len__(self):
-        return max(0, len(self.frame_paths) - self.sequence_length + 1)
-    
+        return len(self.oversampled_indices)
+
     def __getitem__(self, idx):
-        end_idx = idx + self.sequence_length
-        seq_frames = []
-        
-        for i in range(idx, end_idx):
-            try:
-                img = cv2.imread(self.frame_paths[i])
-                if img is None:
-                    raise ValueError(f"Could not load image: {self.frame_paths[i]}")
-                img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-                if self.transform:
-                    img = self.transform(img)
-                seq_frames.append(img)
-            except Exception as e:
-                print(f"Error loading frame {i}: {e}")
-                black_frame = torch.zeros(3, IMG_HEIGHT, IMG_WIDTH)
-                seq_frames.append(black_frame)
-        
-        seq_actions = self.actions[idx:end_idx]
-        
-        return torch.stack(seq_frames), torch.tensor(seq_actions, dtype=torch.float32)
+        start_idx = self.oversampled_indices[idx]
+
+        # Load sequence of frames
+        frames = []
+        for i in range(self.sequence_length):
+            frame_path = os.path.join(self.frame_dir, f"frame_{start_idx + i:06d}.png")
+            frame = cv2.imread(frame_path)
+            frame = cv2.resize(frame, (TRAIN_IMG_WIDTH, TRAIN_IMG_HEIGHT))
+            frame = frame / 255.0  # Normalize
+            frames.append(frame)
+
+        frames = np.array(frames)
+
+        # Create target vector
+        target = np.zeros(len(COMMON_KEYS) + 4)  # keys + mouse_pos + mouse_click
+
+        # Get actions for this sequence
+        sequence_actions = [
+            a
+            for a in self.actions
+            if start_idx <= a["frame"] < start_idx + self.sequence_length
+        ]
+
+        # Process key actions
+        for action in sequence_actions:
+            if action["type"] == "key_press" and action["key"] in COMMON_KEYS:
+                key_idx = COMMON_KEYS.index(action["key"])
+                target[key_idx] = 1.0
+
+        # Process mouse actions (simplified)
+        for action in sequence_actions:
+            if action["type"] == "mouse_move":
+                # Normalize mouse position (assuming 1920x1080)
+                target[-4] = action["x"] / 1920
+                target[-3] = action["y"] / 1080
+            elif action["type"] == "mouse_click":
+                if "left" in str(action["button"]):
+                    target[-2] = 1.0
+                if "right" in str(action["button"]):
+                    target[-1] = 1.0
+
+        return torch.FloatTensor(frames), torch.FloatTensor(target)
+
 
 class ImprovedBehaviorCloningCNNRNN(nn.Module):
+    """Improved neural network for behavior cloning."""
+
     def __init__(self, output_dim):
         super().__init__()
-        
-        # Simplified CNN for better training
+
+        # CNN for feature extraction
         self.cnn = nn.Sequential(
-            nn.Conv2d(3, 32, 5, stride=2, padding=2), nn.BatchNorm2d(32), nn.ReLU(),
-            nn.Conv2d(32, 64, 3, stride=2, padding=1), nn.BatchNorm2d(64), nn.ReLU(),
-            nn.Conv2d(64, 128, 3, stride=2, padding=1), nn.BatchNorm2d(128), nn.ReLU(),
+            nn.Conv2d(3, 32, 5, stride=2, padding=2),
+            nn.BatchNorm2d(32),
+            nn.ReLU(),
+            nn.Conv2d(32, 64, 3, stride=2, padding=1),
+            nn.BatchNorm2d(64),
+            nn.ReLU(),
+            nn.Conv2d(64, 128, 3, stride=2, padding=1),
+            nn.BatchNorm2d(128),
+            nn.ReLU(),
             nn.AdaptiveAvgPool2d((6, 6)),
-            nn.Flatten()
+            nn.Flatten(),
         )
-        
+
         # Calculate CNN output size
         with torch.no_grad():
-            dummy_input = torch.zeros(1, 3, IMG_HEIGHT, IMG_WIDTH)
-            cnn_output_size = self.cnn(dummy_input).shape[1]
-        
-        print(f"CNN output size: {cnn_output_size}")
-        
-        # DirectML-compatible temporal processing (replaces LSTM)
-        # Simple but effective temporal layers
-        self.temporal_layers = nn.Sequential(
-            nn.Linear(cnn_output_size, 512),
-            nn.ReLU(),
-            nn.Dropout(0.1),
-            nn.Linear(512, 256),
-            nn.ReLU(),
-            nn.Dropout(0.1),
-            nn.Linear(256, 256)  # Final temporal feature size
+            cnn_output_size = self.cnn(
+                torch.zeros(1, 3, TRAIN_IMG_HEIGHT, TRAIN_IMG_WIDTH)
+            ).shape[1]
+
+        # LSTM for temporal modeling
+        self.lstm = nn.LSTM(
+            input_size=cnn_output_size,
+            hidden_size=256,
+            num_layers=2,
+            batch_first=True,
+            dropout=0.1,
         )
-        
-        # Improved key head with better initialization
+
+        # Output heads
         self.key_head = nn.Sequential(
             nn.Linear(256, 128),
             nn.ReLU(),
             nn.Dropout(0.2),
             nn.Linear(128, len(COMMON_KEYS)),
-            nn.Sigmoid()
+            nn.Sigmoid(),
         )
-        
+
         self.mouse_pos_head = nn.Sequential(
-            nn.Linear(256, 64),
-            nn.ReLU(),
-            nn.Linear(64, 2),
-            nn.Sigmoid()
+            nn.Linear(256, 64), nn.ReLU(), nn.Linear(64, 2), nn.Sigmoid()
         )
-        
+
         self.mouse_click_head = nn.Sequential(
-            nn.Linear(256, 32),
-            nn.ReLU(),
-            nn.Linear(32, 2),
-            nn.Sigmoid()
+            nn.Linear(256, 32), nn.ReLU(), nn.Linear(32, 2), nn.Sigmoid()
         )
-        
-        # Initialize weights for better training
-        self._init_weights()
-    
-    def _init_weights(self):
-        """Initialize weights to prevent vanishing gradients"""
-        for m in self.modules():
-            if isinstance(m, nn.Linear):
-                nn.init.xavier_uniform_(m.weight)
-                if m.bias is not None:
-                    nn.init.zeros_(m.bias)
-            elif isinstance(m, nn.Conv2d):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
-                if m.bias is not None:
-                    nn.init.zeros_(m.bias)
-    
+
     def forward(self, x):
-        b, s, c, h, w = x.shape
-        
+        batch_size, seq_len, channels, height, width = x.shape
+
         # Process through CNN
-        cnn_out = self.cnn(x.view(b * s, c, h, w))
-        temporal_in = cnn_out.view(b, s, -1)
-        
-        # Process through DirectML-compatible temporal layers
-        # Apply temporal processing to each frame independently
-        temporal_out = self.temporal_layers(temporal_in.view(b * s, -1))
-        temporal_out = temporal_out.view(b, s, -1)
-        
-        # Simple temporal aggregation - use the last frame's features
-        # (Alternative to LSTM's hidden state)
-        final_features = temporal_out[:, -1, :]  # Take last timestep
-        
-        # Apply heads to final features
-        key_out = self.key_head(final_features)
-        mouse_pos_out = self.mouse_pos_head(final_features)
-        mouse_click_out = self.mouse_click_head(final_features)
-        
-        # Combine outputs and expand back to sequence dimension for compatibility
+        cnn_out = self.cnn(x.view(batch_size * seq_len, channels, height, width))
+        lstm_in = cnn_out.view(batch_size, seq_len, -1)
+
+        # Process through LSTM
+        lstm_out, _ = self.lstm(lstm_in)
+        lstm_flat = lstm_out.reshape(batch_size * seq_len, -1)
+
+        # Generate outputs
+        key_out = self.key_head(lstm_flat)
+        mouse_pos_out = self.mouse_pos_head(lstm_flat)
+        mouse_click_out = self.mouse_click_head(lstm_flat)
+
+        # Combine outputs
         combined = torch.cat([key_out, mouse_pos_out, mouse_click_out], dim=1)
-        
-        return combined.unsqueeze(1).expand(b, s, -1)
+        return combined.view(batch_size, seq_len, -1)
 
-def calculate_balanced_weights(actions, num_keys):
-    """Calculate balanced weights that don't over-penalize key presses"""
-    key_actions = actions[:, :num_keys]
-    pos_counts = np.sum(key_actions, axis=0)
-    neg_counts = len(actions) - pos_counts
-    
-    # Avoid division by zero and extreme weights
-    pos_counts = np.maximum(pos_counts, 1)
-    neg_counts = np.maximum(neg_counts, 1)
-    
-    # Use square root to reduce extreme weight differences
-    weights = np.sqrt(neg_counts / pos_counts)
-    weights = np.clip(weights, 1.0, 10.0)  # Much more reasonable limits
-    
-    return torch.tensor(weights, dtype=torch.float32)
 
-def select_device():
-    """Smart device selection: DirectML -> ROCm/CUDA -> CPU"""
-    device = None
-    device_name = "Unknown"
-    
-    # Try DirectML first (best for AMD GPUs on Windows)
-    try:
-        import torch_directml
-        device = torch_directml.device()
-        device_name = "DirectML (AMD GPU acceleration)"
-        print("🚀 Using DirectML for GPU acceleration!")
-    except ImportError:
-        pass
-    
-    # Fallback to ROCm/CUDA
-    if device is None:
-        if torch.cuda.is_available():
-            device = torch.device("cuda")
-            device_name = f"CUDA (GPU: {torch.cuda.get_device_name()})"
-            print("⚡ Using CUDA for GPU acceleration!")
-        else:
-            # Check for ROCm (AMD's CUDA alternative)
-            try:
-                if hasattr(torch.version, 'hip') and torch.version.hip is not None:
-                    device = torch.device("cuda")  # ROCm uses cuda device interface
-                    device_name = "ROCm (AMD GPU acceleration)"
-                    print("🔥 Using ROCm for AMD GPU acceleration!")
-            except:
-                pass
-    
-    # Final fallback to CPU
-    if device is None:
-        device = torch.device("cpu")
-        device_name = "CPU (no GPU acceleration)"
-        print("💻 Using CPU (consider installing DirectML for GPU acceleration)")
-    
-    return device, device_name
+def validate(model, val_loader, device):
+    """Validate model and return F1 score."""
+    model.eval()
+    all_preds = []
+    all_targets = []
 
-def improved_loss(outputs, targets, num_keys, device, key_weights):
-    b, s, _ = outputs.shape
-    
-    # Reshape to treat sequence as batch (use reshape for non-contiguous tensors)
-    outputs = outputs.reshape(b * s, -1)
-    targets = targets.reshape(b * s, -1)
-    
-    # Split outputs and targets
-    key_outputs = outputs[:, :num_keys]
-    key_targets = targets[:, :num_keys]
-    mouse_pos_outputs = outputs[:, num_keys:num_keys+2]
-    mouse_pos_targets = targets[:, num_keys:num_keys+2]
-    mouse_click_outputs = outputs[:, num_keys+2:]
-    mouse_click_targets = targets[:, num_keys+2:]
-    
-    # Focal loss for keys to handle class imbalance better
-    alpha = 0.25
-    gamma = 2.0
-    
-    key_weights_expanded = key_weights.unsqueeze(0).expand_as(key_targets)
-    
-    # Focal loss implementation
-    pt = key_targets * key_outputs + (1 - key_targets) * (1 - key_outputs)
-    focal_weight = (1 - pt) ** gamma
-    key_loss = -alpha * focal_weight * (key_targets * torch.log(key_outputs + 1e-7) + 
-                                       (1 - key_targets) * torch.log(1 - key_outputs + 1e-7))
-    key_loss = (key_loss * key_weights_expanded).mean()
-    
-    # MSE for mouse position (DirectML compatible)
-    diff = mouse_pos_outputs - mouse_pos_targets
-    pos_loss = torch.mean(diff * diff)
-    
-    # L1 regularization for mouse movement smoothness
-    # Penalize large differences between consecutive mouse predictions
-    mouse_smoothness_loss = 0.0
-    if s > 1:  # Only if we have sequences
-        # Reshape back to sequence format for temporal analysis
-        mouse_seq_outputs = mouse_pos_outputs.reshape(b, s, 2)
-        mouse_seq_targets = mouse_pos_targets.reshape(b, s, 2)
-        
-        # Calculate L1 loss on consecutive frame differences
-        mouse_diff_pred = torch.abs(mouse_seq_outputs[:, 1:] - mouse_seq_outputs[:, :-1])
-        mouse_diff_target = torch.abs(mouse_seq_targets[:, 1:] - mouse_seq_targets[:, :-1])
-        
-        # Encourage predicted movement to match target movement patterns (DirectML compatible)
-        mouse_smoothness_loss = torch.mean(torch.abs(mouse_diff_pred - mouse_diff_target))
-    
-    # BCE for mouse clicks (DirectML compatible)
-    # Custom BCE: -(target * log(input) + (1 - target) * log(1 - input))
-    eps = 1e-7
-    mouse_click_outputs_clamped = torch.clamp(mouse_click_outputs, eps, 1 - eps)
-    click_loss = -torch.mean(mouse_click_targets * torch.log(mouse_click_outputs_clamped) + 
-                            (1 - mouse_click_targets) * torch.log(1 - mouse_click_outputs_clamped))
-    
-    # Balanced loss weights (reduced key loss dominance for better learning)
-    total_loss = key_loss * KEY_LOSS_WEIGHT + pos_loss * POS_LOSS_WEIGHT + click_loss * CLICK_LOSS_WEIGHT + mouse_smoothness_loss * SMOOTHNESS_LOSS_WEIGHT
-    
-    return total_loss, key_loss, pos_loss, click_loss, mouse_smoothness_loss
+    with torch.no_grad():
+        for frames, targets in val_loader:
+            frames = frames.to(device)
+            targets = targets.to(device)
 
-def train():
-    transform = transforms.Compose([
-        transforms.ToPILImage(),
-        transforms.Resize((IMG_HEIGHT, IMG_WIDTH)),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-    ])
-    
-    # Initialize dataset containers
-    all_datasets = []
-    all_actions = []
-    
-    # Use centralized config paths
-    frame_dir = FRAME_DIR
-    actions_file = ACTIONS_FILE
-    
-    if os.path.exists(actions_file) and os.path.exists(frame_dir):
-        print(f"Loading dataset from: {DATA_DIR}")
-        dataset = WoWSequenceDataset(frame_dir, actions_file, SEQUENCE_LENGTH, transform)
-        if len(dataset) > 0:
-            all_datasets.append(dataset)
-            all_actions.append(dataset.actions)
-    else:
-        print(f"Warning: Dataset not found at {DATA_DIR}")
-    
-    if not all_datasets:
-        print("No valid datasets found!")
+            outputs = model(frames)
+            outputs = outputs.view(-1, outputs.shape[-1])
+            targets = targets.view(-1, targets.shape[-1])
+
+            # Convert to binary predictions
+            preds = (outputs > 0.5).float()
+
+            all_preds.append(preds.cpu().numpy())
+            all_targets.append(targets.cpu().numpy())
+
+    # Calculate F1 score
+    all_preds = np.concatenate(all_preds, axis=0)
+    all_targets = np.concatenate(all_targets, axis=0)
+
+    # Calculate F1 for key predictions only
+    key_preds = all_preds[:, : len(COMMON_KEYS)]
+    key_targets = all_targets[:, : len(COMMON_KEYS)]
+
+    precision, recall, f1, _ = precision_recall_fscore_support(
+        key_targets.flatten(), key_preds.flatten(), average="binary"
+    )
+
+    return f1
+
+
+def main():
+    """Main training function."""
+    print("🧠 AI Game Automation - Model Training")
+    print("=" * 50)
+
+    # Check if data exists
+    if not os.path.exists(FRAME_DIR):
+        print(f"❌ Frames directory not found: {FRAME_DIR}")
+        print("Please record some data first: python scripts/3_record_data.py")
         return
-    
-    # Calculate balanced class weights
-    combined_actions = np.vstack(all_actions)
-    key_weights = calculate_balanced_weights(combined_actions, len(COMMON_KEYS))
-    
-    print(f"Key weights range: [{key_weights.min():.2f}, {key_weights.max():.2f}]")
-    
-    combined_dataset = ConcatDataset(all_datasets)
-    dataloader = DataLoader(combined_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=0)
-    
+
+    if not os.path.exists(ACTIONS_FILE):
+        print(f"❌ Actions file not found: {ACTIONS_FILE}")
+        print("Please record some data first: python scripts/3_record_data.py")
+        return
+
+    # Setup device
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"🚀 Using device: {device}")
+
+    # Create dataset
+    print("📊 Loading dataset...")
+    dataset = WoWSequenceDataset(FRAME_DIR, ACTIONS_FILE, SEQUENCE_LENGTH)
+
+    # Split into train/validation
+    val_size = int(len(dataset) * VALIDATION_SPLIT)
+    train_size = len(dataset) - val_size
+    train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
+
+    print(f"📊 Training samples: {len(train_dataset)}")
+    print(f"📊 Validation samples: {len(val_dataset)}")
+
+    # Create data loaders
+    train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
+    val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)
+
+    # Create model
     output_dim = len(COMMON_KEYS) + 4
-    model = ImprovedBehaviorCloningCNNRNN(output_dim)
-    
-    optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=SCHEDULER_FACTOR, patience=SCHEDULER_PATIENCE)
-    
-    # Smart device selection using utility function
-    device, device_name = select_device()
-    
-    model.to(device)
-    key_weights = key_weights.to(device)
-    
-    print(f"Training on {device_name} for {EPOCHS} epochs...")
-    print(f"Dataset size: {len(combined_dataset)} sequences")
-    
-    # Training loop with detailed logging
-    loss_history = []
-    key_loss_history = []
-    
+    model = ImprovedBehaviorCloningCNNRNN(output_dim).to(device)
+
+    # Setup training
+    criterion = nn.BCELoss()
+    optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, mode="max", factor=0.5, patience=3, verbose=True
+    )
+
+    print(f"🧠 Model parameters: {sum(p.numel() for p in model.parameters()):,}")
+    print(f"🎯 Output dimension: {output_dim}")
+    print(f"📊 Keys to learn: {len(COMMON_KEYS)}")
+
+    # Training loop
+    print("\n🚀 Starting training...")
+    best_f1 = 0.0
+
     for epoch in range(EPOCHS):
         model.train()
-        running_loss = 0.0
-        running_key_loss = 0.0
-        running_pos_loss = 0.0
-        running_click_loss = 0.0
-        running_smoothness_loss = 0.0
-        
-        for batch_idx, (sequences, actions) in enumerate(dataloader):
-            sequences, actions = sequences.to(device), actions.to(device)
-            
+        total_loss = 0.0
+
+        for batch_idx, (frames, targets) in enumerate(train_loader):
+            frames = frames.to(device)
+            targets = targets.to(device)
+
             optimizer.zero_grad()
-            outputs = model(sequences)
-            
-            total_loss, key_loss, pos_loss, click_loss, smoothness_loss = improved_loss(
-                outputs, actions, len(COMMON_KEYS), device, key_weights
-            )
-            
-            total_loss.backward()
-            
-            # Gradient clipping (increased for better learning)
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=GRADIENT_CLIP_NORM)
-            
+            outputs = model(frames)
+
+            # Reshape for loss calculation
+            outputs = outputs.view(-1, outputs.shape[-1])
+            targets = targets.view(-1, targets.shape[-1])
+
+            loss = criterion(outputs, targets)
+            loss.backward()
             optimizer.step()
-            
-            running_loss += total_loss.item()
-            running_key_loss += key_loss.item()
-            running_pos_loss += pos_loss.item()
-            running_click_loss += click_loss.item()
-            running_smoothness_loss += smoothness_loss.item()
-        
-        scheduler.step(running_loss / len(dataloader))
-        
-        avg_loss = running_loss / len(dataloader)
-        avg_key_loss = running_key_loss / len(dataloader)
-        avg_pos_loss = running_pos_loss / len(dataloader)
-        avg_click_loss = running_click_loss / len(dataloader)
-        avg_smoothness_loss = running_smoothness_loss / len(dataloader)
-        
-        loss_history.append(avg_loss)
-        key_loss_history.append(avg_key_loss)
-        
-        print(f"Epoch {epoch + 1}/{EPOCHS}")
-        print(f"  Total Loss: {avg_loss:.5f}")
-        print(f"  Key Loss: {avg_key_loss:.5f}")
-        print(f"  Mouse Pos Loss: {avg_pos_loss:.5f}")
-        print(f"  Mouse Click Loss: {avg_click_loss:.5f}")
-        print(f"  Mouse Smoothness Loss: {avg_smoothness_loss:.5f}")
-        print(f"  Learning Rate: {scheduler.optimizer.param_groups[0]['lr']:.6f}")
-        
-        # Early stopping if key loss is very low (model learned to ignore keys)
-        if avg_key_loss < 0.001:
-            print("⚠️  WARNING: Key loss is very low - model may be ignoring keys!")
-    
-    # Save model
-    torch.save(model.state_dict(), MODEL_SAVE_PATH)
-    print(f"✅ Model saved to {MODEL_SAVE_PATH}")
-    
-    # Plot training loss
-    plt.figure(figsize=(12, 8))
-    
-    plt.subplot(2, 1, 1)
-    plt.plot(loss_history)
-    plt.title('Total Training Loss')
-    plt.xlabel('Epoch')
-    plt.ylabel('Loss')
-    plt.grid(True)
-    
-    plt.subplot(2, 1, 2)
-    plt.plot(key_loss_history)
-    plt.title('Key Loss (Should not be too low)')
-    plt.xlabel('Epoch')
-    plt.ylabel('Key Loss')
-    plt.grid(True)
-    
-    plt.tight_layout()
-    plt.savefig('improved_training_loss.png')
-    plt.show()
+
+            total_loss += loss.item()
+
+            if batch_idx % 10 == 0:
+                print(
+                    f"Epoch {epoch + 1}/{EPOCHS}, Batch {batch_idx}, "
+                    f"Loss: {loss.item():.4f}"
+                )
+
+        # Validation
+        val_f1 = validate(model, val_loader, device)
+        avg_loss = total_loss / len(train_loader)
+
+        print(
+            f"Epoch {epoch + 1}/{EPOCHS}: Loss={avg_loss:.4f}, " f"Val F1={val_f1:.4f}"
+        )
+
+        # Save best model
+        if val_f1 > best_f1:
+            best_f1 = val_f1
+            torch.save(model.state_dict(), MODEL_FILE)
+            print(f"💾 Saved best model (F1: {val_f1:.4f})")
+
+        # Learning rate scheduling
+        scheduler.step(val_f1)
+
+    print(f"\n✅ Training complete! Best F1: {best_f1:.4f}")
+    print(f"💾 Model saved to: {MODEL_FILE}")
+
 
 if __name__ == "__main__":
-    train()
+    main()

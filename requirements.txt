@@ -1,10 +1,11 @@
 # AI Game Automation Requirements
-# Updated for compatibility with modern Python versions
+# Updated for compatibility with modern Python versions and refactored scripts
 
 # Core ML/AI libraries
 torch>=2.0.0
 torchvision>=0.15.0
 numpy>=1.21.0
+scikit-learn>=1.3.0  # Added for precision_recall_fscore_support
 
 # Computer Vision & Screen Capture  
 opencv-python>=4.8.0
@@ -14,3 +15,8 @@ Pillow>=10.0.0
 # Input Control & Visualization
 pynput>=1.7.0
 matplotlib>=3.6.0
+
+# Optional: GPU acceleration (install based on your GPU)
+# For NVIDIA GPUs: pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
+# For AMD GPUs: pip install torch-directml
+# For CPU only: pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu

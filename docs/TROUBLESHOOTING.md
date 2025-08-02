@@ -1,6 +1,6 @@
 # 🛠️ Troubleshooting Guide
 
-Common issues and solutions for AI Game Automation.
+Common issues and solutions for AI Game Automation v2.0.
 
 ## 🔍 Installation Issues
 
@@ -28,14 +28,21 @@ Common issues and solutions for AI Game Automation.
 **Problem**: Dependencies not installed
 **Solution**:
 ```bash
-# Navigate to scripts directory
-cd scripts
+# Run the setup script
+python scripts/0_setup.py
 
-# Run the dependency checker
-python 1_check_dependencies.py
+# Or check dependencies manually
+python scripts/1_check_dependencies.py
 
-# Follow the installation commands it provides
-# For example: pip install opencv-python numpy torch
+# Install missing packages
+pip install -r requirements.txt
+```
+
+### "scikit-learn not found" error
+**Problem**: New dependency missing (added in v2.0)
+**Solution**:
+```bash
+pip install scikit-learn>=1.3.0
 ```
 
 ## 🎮 Recording Issues
@@ -63,7 +70,7 @@ python 1_check_dependencies.py
 **Solutions**:
 ```bash
 # Record shorter sessions
-# Delete old recordings: frames_*.png and actions.npy
+# Delete old recordings: data_human/frames/ and data_human/actions.npy
 # Use lower game resolution
 ```
 
@@ -87,7 +94,7 @@ python scripts/1_check_dependencies.py
 **Solutions**:
 ```bash
 # Close other programs using GPU (games, browsers)
-# Reduce batch size in train_model.py (change BATCH_SIZE = 8 to BATCH_SIZE = 4)
+# Reduce batch size in config.py: BATCH_SIZE = 8
 # Use CPU training instead
 ```
 
@@ -98,188 +105,216 @@ python scripts/1_check_dependencies.py
 # Check data quality first
 python scripts/4_analyze_data_quality.py
 
-# If key press rate < 5%, record more active gameplay
-# If data looks good, try longer training (more epochs)
+# Verify configuration
+python scripts/2_verify_system_setup.py
 
-# If loss is stagnating (not changing between epochs):
-# - Training parameters have been optimized for better convergence
-# - Learning rate reduced from 5e-4 to 1e-4 in config.py
-# - Loss weights balanced for better learning
-# - Try recording more diverse gameplay data
-
-# Configuration issues:
-# - Check if config.py imports correctly
-# - Verify all required variables are defined
-# - Run validation: python -c "from config import validate_config; validate_config()"
+# Adjust oversampling if needed
+# In config.py: OVERSAMPLE_ACTION_FRAMES_MULTIPLIER = 20
 ```
 
-## 🎯 AI Performance Issues
-
-### AI doesn't press any keys
-**Problem**: Model too conservative
+### "Model not learning keys"
+**Problem**: Class imbalance (common issue)
 **Solutions**:
 ```bash
-# Check model outputs first
+# The new oversampling should fix this automatically
+# If still having issues, increase oversampling:
+# In config.py: OVERSAMPLE_ACTION_FRAMES_MULTIPLIER = 25
+
+# Lower the key threshold for inference:
+# In config.py: KEY_THRESHOLD = 0.15
+
+# Record more data with key presses
+```
+
+## 🎯 Inference Issues
+
+### "AI not pressing keys"
+**Problem**: Threshold too high or model not trained well
+**Solutions**:
+```bash
+# Lower the key threshold in config.py
+KEY_THRESHOLD = 0.15  # Try 0.1-0.2 range
+
+# Check model predictions
 python scripts/7_debug_model_output.py
 
-# If predictions are very low, lower the threshold:
-# Edit scripts/6_run_inference.py, change KEY_THRESHOLD = 0.15 to 0.1
+# Retrain with better data or more oversampling
 ```
 
-### Mouse movement is jerky or jumpy
-**Problem**: Movement not smooth enough
+### "Jittery mouse movement"
+**Problem**: Mouse smoothing settings
 **Solutions**:
 ```bash
-# Increase mouse smoothing
-# Edit scripts/6_run_inference.py, change MOUSE_SMOOTHING_ALPHA = 0.2 to 0.1
-# (Lower values = more smoothing)
+# Adjust smoothing in config.py
+MOUSE_SMOOTHING_ALPHA = 0.1  # Lower = smoother
+SMOOTH_FACTOR = 0.8          # Higher = smoother
 ```
 
-### AI presses keys constantly
-**Problem**: Model too aggressive
+### "AI pressing wrong keys"
+**Problem**: Model confusion or threshold issues
 **Solutions**:
 ```bash
-# Increase confidence threshold
-# Edit scripts/6_run_inference.py, change KEY_THRESHOLD = 0.15 to 0.25
-# Check training data - might have too many key presses
-```
+# Increase threshold to be more selective
+KEY_THRESHOLD = 0.25
 
-### AI mouse stuck in center of screen
-**Problem**: Mouse position prediction failing
-**Solutions**:
-```bash
-# Check if model predicting mouse movement
+# Check which keys are being confused
 python scripts/7_debug_model_output.py
 
-# Retrain with more varied mouse movement data
-# Ensure game resolution matches training resolution
+# Retrain with cleaner data (fewer accidental key presses)
 ```
-
-## 💻 GPU and Performance Issues
-
-### "GPU detected but PyTorch using CPU"
-**Problem**: Wrong PyTorch installation
-**Solution**:
-```bash
-# Uninstall current PyTorch
-pip uninstall torch torchvision -y
-
-# Reinstall GPU version (follow commands from dependency checker)
-python scripts/1_check_dependencies.py
-```
-
-### "ROCm not working" (AMD users)
-**Problem**: ROCm experimental on Windows
-**Solutions**:
-```bash
-# ROCm on Windows is experimental, try:
-pip uninstall torch torchvision -y
-pip install torch torchvision --index-url https://download.pytorch.org/whl/rocm6.0
-
-# If still issues, use CPU version:
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
-```
-
-### "DirectML installation issues" (AMD/Intel Windows users)
-**Problem**: torch-directml not installing or working
-**Solutions**:
-```bash
-# Ensure Python 3.12 (DirectML requirement)
-python --version  # Should show 3.12.x
-
-# Install DirectML in fresh virtual environment:
-python -m venv ai_directml_venv
-ai_directml_venv\Scripts\activate
-pip install torch-directml
-
-# If Python 3.13+, downgrade to 3.12 or use CPU version
-```
-
-### "High CPU usage with DirectML" (Normal behavior)
-**Problem**: Seeing 80% CPU usage during DirectML training
-**Solution**: This is **normal and expected**! DirectML uses both GPU and CPU:
-- 55-60% GPU usage = GPU acceleration working
-- 80% CPU usage = Full system utilization (good!)
-- This indicates optimal performance, not an issue
 
 ## ⚙️ Configuration Issues
 
-### "Config import errors" or "Missing variables"
-**Problem**: Training script fails to import or find config variables
+### "Configuration validation failed"
+**Problem**: Settings conflict or missing values
 **Solutions**:
 ```bash
-# Test config import
-python -c "from config import *; print('Config works!')"
+# Run configuration validation
+python scripts/2_verify_system_setup.py
 
-# If import fails, check file location:
-# config.py should be in project root, not scripts/ folder
-
-# Test validation
-python -c "from config import validate_config; validate_config()"
-
-# Check for typos in variable names in config.py
+# Check config.py for missing or invalid settings
+# Ensure all required variables are defined
 ```
 
-### "Training crashes with undefined variables"
-**Problem**: Script references variables not in config
+### "Model architecture mismatch"
+**Problem**: Different model definitions between scripts
 **Solutions**:
 ```bash
-# Recent fixes added error handling for:
-# - Missing IMG_HEIGHT/IMG_WIDTH definitions
-# - Undefined all_datasets/all_actions variables
-# - Missing SEQUENCE_LENGTH
-
-# Update to latest version or check scripts/5_train_model.py for fixes
+# This should be fixed in v2.0 with centralized config
+# If still having issues, ensure all scripts use the same config.py
+# Check that model class definitions match across scripts
 ```
 
-## 🔧 Game-Specific Issues
+## 📊 Data Quality Issues
 
-### "AI doesn't work in [specific game]"
-**Possible causes**:
-1. **Anti-cheat blocking**: Some games block automation
-2. **Different resolution**: Train and run at same resolution
-3. **Game too fast**: Record slower-paced gameplay first
-4. **Complex UI**: Train on simple scenarios first
-
+### "Very low key press rate"
+**Problem**: Not enough action data for training
 **Solutions**:
 ```bash
-# Start with simpler games (puzzle, strategy games)
-# Train on specific game scenes (combat, exploration separately)
-# Ensure consistent resolution and graphics settings
+# Record more active gameplay
+# Include more key presses in your recording
+# The oversampling will help, but you still need some key presses
+
+# Check your data:
+python scripts/4_analyze_data_quality.py
 ```
 
-### Recording doesn't capture game
-**Problem**: Game in exclusive fullscreen
-**Solution**:
+### "Actions and frames count mismatch"
+**Problem**: Recording was interrupted or corrupted
+**Solutions**:
 ```bash
-# Change game to "Windowed" or "Borderless Window" mode
-# This allows screen capture to work properly
+# The system will use the smaller count automatically
+# For better results, record a new clean session
+# Ensure recording completes properly (press F2 to stop)
 ```
 
-## 📞 Getting Help
+## 🚀 Performance Issues
 
-### If nothing works:
-1. **Run diagnostics**: `python scripts/1_check_dependencies.py` and `python scripts/2_verify_system_setup.py`
-2. **Check data quality**: `python scripts/4_analyze_data_quality.py`
-3. **Debug model**: `python scripts/7_debug_model_output.py`
-4. **Start simple**: Try with a simple game first
+### "Training takes too long"
+**Problem**: Inefficient settings or hardware
+**Solutions**:
+```bash
+# Enable GPU acceleration
+python scripts/1_check_dependencies.py
 
-### Common error solutions:
-- **"File not found"**: Make sure you're in the right folder
-- **"Permission denied"**: Run as administrator
-- **"Out of memory"**: Close other programs, reduce batch size
-- **"No GPU detected"**: Follow PyTorch GPU installation instructions
+# Optimize settings in config.py:
+BATCH_SIZE = 32          # Larger batches
+EPOCHS = 5               # Fewer epochs
+TRAIN_IMG_WIDTH = 160    # Smaller images
+TRAIN_IMG_HEIGHT = 160
+```
 
-### Performance expectations:
-- **Training time**: 10 minutes (GPU) to 3 hours (CPU)
-- **AI response time**: Under 100ms
-- **Accuracy**: 70-85% for a well-trained model
-- **Memory usage**: 2-4GB during training, 1GB during inference
+### "Inference is laggy"
+**Problem**: Too high FPS or resolution
+**Solutions**:
+```bash
+# Lower inference FPS in config.py:
+INFERENCE_FPS = 5        # Reduce from 10
+
+# Lower resolution:
+IMG_WIDTH = 640          # Reduce from 960
+IMG_HEIGHT = 360         # Reduce from 540
+```
+
+## 🔧 Advanced Issues
+
+### "Validation F1-score not improving"
+**Problem**: Overfitting or poor data quality
+**Solutions**:
+```bash
+# Check validation split is working
+# In config.py: VALIDATION_SPLIT = 0.15
+
+# Record more diverse data
+# Try different oversampling values
+# Check for data leakage between train/val sets
+```
+
+### "Model saves but performance is poor"
+**Problem**: Model saved based on wrong metric
+**Solutions**:
+```bash
+# The new system saves based on F1-score
+# Check that validation data is representative
+# Try different thresholds for inference
+```
+
+### "Memory usage too high"
+**Problem**: Batch size or image size too large
+**Solutions**:
+```bash
+# Reduce memory usage in config.py:
+BATCH_SIZE = 8           # Smaller batches
+TRAIN_IMG_WIDTH = 160    # Smaller images
+TRAIN_IMG_HEIGHT = 160
+SEQUENCE_LENGTH = 3      # Shorter sequences
+```
+
+## 📋 Quick Fix Checklist
+
+Before asking for help, try these steps:
+
+1. **✅ Run system verification**:
+   ```bash
+   python scripts/2_verify_system_setup.py
+   ```
+
+2. **✅ Check data quality**:
+   ```bash
+   python scripts/4_analyze_data_quality.py
+   ```
+
+3. **✅ Validate configuration**:
+   ```bash
+   python scripts/1_check_dependencies.py
+   ```
+
+4. **✅ Debug model output**:
+   ```bash
+   python scripts/7_debug_model_output.py
+   ```
+
+5. **✅ Check documentation**:
+   - [Configuration Guide](CONFIGURATION.md)
+   - [Refactor Summary](../REFACTOR_SUMMARY.md)
+   - [Project Cleanup](../PROJECT_CLEANUP.md)
+
+## 🆘 Getting Help
+
+If you're still having issues:
+
+1. **Check the logs**: Look for error messages in the terminal output
+2. **Verify your setup**: Run all verification scripts
+3. **Check your data**: Ensure you have good quality training data
+4. **Review configuration**: Make sure settings match your hardware
+5. **Open an issue**: Include error messages and system information
+
+**Common solutions for v2.0:**
+- Use the new oversampling feature for better key detection
+- Adjust thresholds based on your game type
+- Enable GPU acceleration for faster training
+- Use the centralized configuration system
 
 ---
 
-**Still having issues?** Open an issue on GitHub with:
-- Your system specifications
-- Error messages (copy the full text)
-- Steps you've already tried
-- Screenshots/videos if helpful 
+**Still stuck?** The refactored system should be much more reliable. If you're having issues, it's likely a configuration or data quality problem that can be easily fixed! 
