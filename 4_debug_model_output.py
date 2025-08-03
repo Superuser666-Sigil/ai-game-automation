@@ -6,11 +6,14 @@ import cv2
 import mss
 from collections import deque
 from torchvision import transforms
-from config import * # Import all settings from the config file
+from config import (
+    MODEL_FILE, COMMON_KEYS, KEY_THRESHOLD,
+    IMG_HEIGHT, IMG_WIDTH, SEQUENCE_LENGTH
+)  # Import specific settings from the config file
 
 # === CONFIG (Loaded from config.py) ===
 # Ensure this path points to the model you want to debug
-MODEL_PATH = MODEL_SAVE_PATH
+MODEL_PATH = MODEL_FILE  # Final trained model is in root directory
 
 # --- Use the CORRECT model class ---
 class ImprovedBehaviorCloningCNNRNN(nn.Module):

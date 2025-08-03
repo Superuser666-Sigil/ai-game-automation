@@ -10,10 +10,14 @@ from pynput.keyboard import Controller as KeyboardController
 from pynput.mouse import Controller as MouseController, Button
 from pynput import keyboard
 from torchvision import transforms
-from config import * # Import all settings from the config file
+from config import (
+    MODEL_FILE, COMMON_KEYS, KEY_THRESHOLD,
+    CLICK_THRESHOLD, MOUSE_SMOOTHING_ALPHA, SMOOTH_FACTOR,
+    IMG_HEIGHT, IMG_WIDTH, SEQUENCE_LENGTH, INFERENCE_FPS
+)  # Import specific settings from the config file
 
 # === CONFIG (Loaded from config.py) ===
-MODEL_PATH = MODEL_SAVE_PATH # Use the same path as training
+MODEL_PATH = MODEL_FILE  # Final trained model is in root directory
 
 # --- Main script ---
 with mss.mss() as sct: 

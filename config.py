@@ -6,8 +6,8 @@ DATA_DIRS      = [DATA_DIR]
 FRAME_DIR      = os.path.join(DATA_DIR, "frames")
 ACTIONS_FILE   = "actions.npy"
 
-MODEL_FILE                 = "trained_model.pth"
-MODEL_SAVE_DIR             = "game_model"
+MODEL_FILE                 = "trained_model.pth"  # Final trained model (in root directory)
+MODEL_SAVE_DIR             = "game_model"         # Directory for epoch checkpoints
 os.makedirs(MODEL_SAVE_DIR, exist_ok=True)
 MODEL_SAVE_PATH_TEMPLATE   = os.path.join(MODEL_SAVE_DIR, "model_epoch{}.pt")
 
