@@ -49,8 +49,10 @@ COMMON_KEYS = [
 
 KEY_THRESHOLD          = 0.2
 CLICK_THRESHOLD        = 0.3
-MOUSE_SMOOTHING_ALPHA  = 0.2
-SMOOTH_FACTOR          = 0.7
+# Mouse smoothing parameters
+MOUSE_SMOOTHING_ALPHA  = 0.3  # For prediction smoothing (higher = more responsive)
+SMOOTH_FACTOR          = 0.6  # For movement smoothing (higher = faster movement)
+MOUSE_DEADZONE         = 2    # Minimum movement threshold in pixels
 
 # === LOSS WEIGHTS ===
 KEY_LOSS_WEIGHT         = 1.0

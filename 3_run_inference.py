@@ -12,7 +12,7 @@ from pynput import keyboard
 from torchvision import transforms
 from config import (
     MODEL_FILE, COMMON_KEYS, KEY_THRESHOLD,
-    CLICK_THRESHOLD, MOUSE_SMOOTHING_ALPHA, SMOOTH_FACTOR,
+    CLICK_THRESHOLD, MOUSE_SMOOTHING_ALPHA, SMOOTH_FACTOR, MOUSE_DEADZONE,
     IMG_HEIGHT, IMG_WIDTH, SEQUENCE_LENGTH, INFERENCE_FPS
 )  # Import specific settings from the config file
 
@@ -153,10 +153,17 @@ def apply_output(output):
 def smooth_mouse_movement():
     current_pos = mouse_controller.position
     diff_x, diff_y = target_mouse_pos[0] - current_pos[0], target_mouse_pos[1] - current_pos[1]
-    if abs(diff_x) > 3 or abs(diff_y) > 3:
+    
+    # Only move if difference exceeds deadzone
+    if abs(diff_x) > MOUSE_DEADZONE or abs(diff_y) > MOUSE_DEADZONE:
         new_x = int(current_pos[0] + diff_x * SMOOTH_FACTOR)
         new_y = int(current_pos[1] + diff_y * SMOOTH_FACTOR)
-        mouse_controller.position = (max(0, min(SCREEN_WIDTH - 1, new_x)), max(0, min(SCREEN_HEIGHT - 1, new_y)))
+        
+        # Clamp to screen boundaries
+        new_x = max(0, min(SCREEN_WIDTH - 1, new_x))
+        new_y = max(0, min(SCREEN_HEIGHT - 1, new_y))
+        
+        mouse_controller.position = (new_x, new_y)
 
 def capture_and_process_frame():
     with mss.mss() as sct:
