@@ -19,6 +19,29 @@ from config import (
 # === CONFIG (Loaded from config.py) ===
 MODEL_PATH = MODEL_FILE  # Final trained model is in root directory
 
+# Key mapping for pynput
+KEY_MAPPING = {
+    'w': keyboard.KeyCode.from_char('w'),
+    'a': keyboard.KeyCode.from_char('a'),
+    's': keyboard.KeyCode.from_char('s'),
+    'd': keyboard.KeyCode.from_char('d'),
+    'space': keyboard.Key.space,
+    'shift': keyboard.Key.shift,
+    'ctrl': keyboard.Key.ctrl,
+    '1': keyboard.KeyCode.from_char('1'),
+    '2': keyboard.KeyCode.from_char('2'),
+    '3': keyboard.KeyCode.from_char('3'),
+    '4': keyboard.KeyCode.from_char('4'),
+    '5': keyboard.KeyCode.from_char('5'),
+    'q': keyboard.KeyCode.from_char('q'),
+    'e': keyboard.KeyCode.from_char('e'),
+    'r': keyboard.KeyCode.from_char('r'),
+    'f': keyboard.KeyCode.from_char('f'),
+    'tab': keyboard.Key.tab,
+    'enter': keyboard.Key.enter,
+    'escape': keyboard.Key.esc,
+}
+
 # --- Main script ---
 with mss.mss() as sct: 
     monitor = sct.monitors[1]
