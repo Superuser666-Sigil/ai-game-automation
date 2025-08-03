@@ -1,0 +1,13 @@
+include README.md
+include requirements.txt
+include LICENSE
+include *.py
+include data_human/*
+include game_model/*
+recursive-include data_human/frames *
+recursive-include game_model *.pt
+global-exclude *.pyc
+global-exclude __pycache__
+global-exclude .git*
+global-exclude .DS_Store
+global-exclude *.log 
