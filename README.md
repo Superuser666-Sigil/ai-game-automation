@@ -47,7 +47,12 @@ A behavior cloning system for game automation using CNN-LSTM architecture. This 
 
 2. **Train the model:**
    ```bash
+   # Start training with automatic TensorBoard (recommended)
    python 2_train_model.py
+   
+   # Or disable TensorBoard auto-startup
+   python 2_train_model.py --no-tensorboard
+   
    # Or use the console script
    train-model
    ```
@@ -69,14 +74,45 @@ A behavior cloning system for game automation using CNN-LSTM architecture. This 
 ## 🎯 Key Features
 
 - **Behavior Cloning**: Learns from human gameplay recordings
-- **CNN-LSTM Architecture**: Processes visual sequences for temporal understanding
+- **Transformer Architecture**: Advanced CNN-Transformer for better temporal understanding
 - **Real-time Inference**: Controls games in real-time
 - **GPU Acceleration**: Supports CUDA, DirectML, and ROCm
-- **TensorBoard Integration**: Monitor training progress
-- **Early Stopping**: Prevents overfitting
+- **Enhanced TensorBoard Integration**: Comprehensive training monitoring with auto-startup
+- **Focal Loss**: Handles class imbalance for rare actions (mouse clicks)
+- **Early Stopping**: Prevents overfitting with configurable patience
 - **Oversampling**: Balances action vs. non-action frames
-- **Validation**: Robust model evaluation with F1-score
+- **Validation**: Robust model evaluation with F1-score and prediction analysis
 - **Graceful Shutdown**: Multiple ways to safely stop training
+
+## 📊 TensorBoard Monitoring
+
+The training script now includes automatic TensorBoard startup for comprehensive training monitoring:
+
+### Automatic TensorBoard Startup
+When you run training, TensorBoard automatically starts and opens at `http://localhost:6006`:
+```bash
+python 2_train_model.py
+# TensorBoard will start automatically and show:
+# ✅ TensorBoard started successfully!
+#    Open your browser and go to: http://localhost:6006
+```
+
+### What You Can Monitor
+- **Loss Components**: Individual losses for keys, clicks, and mouse position
+- **Training Metrics**: Learning rate, gradient norms, and overall loss
+- **Validation Metrics**: F1 scores, prediction distributions, and confusion matrices
+- **Model Performance**: Action prediction statistics and threshold optimization
+- **Prediction Analysis**: Histograms showing model confidence distributions
+
+### Manual TensorBoard Control
+If you prefer to start TensorBoard manually:
+```bash
+# Disable auto-startup
+python 2_train_model.py --no-tensorboard
+
+# Start TensorBoard manually
+tensorboard --logdir runs/behavior_cloning_improved --port 6006
+```
 
 ## 🛑 Graceful Training Shutdown
 

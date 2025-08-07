@@ -1,34 +1,45 @@
-# Core dependencies
-torch>=2.0.0
-torchvision>=0.15.0
-numpy>=1.21.0
-opencv-python>=4.8.0
-scikit-learn>=1.3.0
-matplotlib>=3.5.0
-seaborn>=0.12.0
+# -- Create VENV --
+# python -m venv venv
+# venv\Scripts\activate.bat
+# pip install -r requirements.txt
 
-# Input/Output handling
-pynput>=1.7.6
-mss>=9.0.1
-Pillow>=9.0.0
+# -- Uninstall all packages --
+# pip freeze > installed.txt
+# pip uninstall -y -r installed.txt
+# del installed.txt
 
-# System monitoring
-psutil>=5.9.0
+# -- Core Requirements --
 
-# Development tools (optional)
-tensorboard>=2.13.0
-black>=23.0.0
-ruff>=0.1.0
-flake8>=6.0.0
+# Core Deep Learning Framework (PyTorch with CUDA 12.1 support)
+--extra-index-url https://download.pytorch.org/whl/cu121
+torch==2.3.1
+torchvision==0.18.1
 
-# GPU support (install appropriate version for your GPU)
-# For NVIDIA CUDA:
-# torch>=2.0.0+cu118 -f https://download.pytorch.org/whl/torch_stable.html
-# torchvision>=0.15.0+cu118 -f https://download.pytorch.org/whl/torch_stable.html
+# Computer Vision and Screen Capture
+opencv-python-headless==4.9.0.80
+mss==9.0.1
 
-# For AMD DirectML (Windows):
-# torch-directml>=1.13.0
+# User Input Simulation and Monitoring
+pynput==1.7.6
 
-# For Apple Silicon:
-# torch>=2.0.0
-# torchvision>=0.15.0 
+# Data Handling and Scientific Computing
+numpy==1.26.4
+
+# Model Evaluation and Visualization
+scikit-learn==1.5.0
+matplotlib==3.9.0
+seaborn==0.13.2
+
+# TensorBoard Logging
+tensorboard==2.16.2
+
+# -- Optional Optimization & Tooling Packages --
+
+# Faster image processing library (drop-in replacement for Pillow) - not supported by python 3.12 yet
+#Pillow-SIMD==9.5.0.post2
+
+# Hardware-specific acceleration for Intel CPUs & GPUs
+# intel-extension-for-pytorch==2.3.100+cpu
+
+# For monitoring NVIDIA GPU stats programmatically
+# nvidia-ml-py==12.5.0

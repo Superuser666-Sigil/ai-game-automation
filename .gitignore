@@ -1,8 +1,26 @@
-# Python
+# Model files and checkpoints
+game_model/
+game_model_checkpoints/
+trained_model.pth
+*.pt
+*.pth
+
+# Data files
+data_human/
+*.npy
+
+# Virtual environment
+venv/
+env/
+.venv/
+
+# Python cache
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
+
+# Distribution / packaging
 .Python
 build/
 develop-eggs/
@@ -19,7 +37,6 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
-MANIFEST
 
 # PyInstaller
 *.manifest
@@ -41,39 +58,11 @@ coverage.xml
 .hypothesis/
 .pytest_cache/
 
-# Translations
-*.mo
-*.pot
-
-# Django stuff:
-*.log
-local_settings.py
-db.sqlite3
-
-# Flask stuff:
-instance/
-.webassets-cache
-
-# Scrapy stuff:
-.scrapy
-
-# Sphinx documentation
-docs/_build/
-
-# PyBuilder
-target/
-
 # Jupyter Notebook
 .ipynb_checkpoints
 
 # pyenv
 .python-version
-
-# celery beat schedule file
-celerybeat-schedule
-
-# SageMath parsed files
-*.sage.py
 
 # Environments
 .env
@@ -83,21 +72,6 @@ venv/
 ENV/
 env.bak/
 venv.bak/
-
-# Spyder project settings
-.spyderproject
-.spyproject
-
-# Rope project settings
-.ropeproject
-
-# mkdocs documentation
-/site
-
-# mypy
-.mypy_cache/
-.dmypy.json
-dmypy.json
 
 # IDE
 .vscode/
@@ -115,7 +89,20 @@ dmypy.json
 ehthumbs.db
 Thumbs.db
 
-# Project specific
-*.7z
-*.zip
-*.rar 
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
+temp/
+tmp/
+
+# TensorBoard logs
+runs/
+tensorboard_logs/
+
+# Debug files
+debug_*.py
+check_*.py 
